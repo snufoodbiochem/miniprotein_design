@@ -1,0 +1,248 @@
+#!/bin/bash
+
+echo "You should ready rest file first"
+
+
+#######################
+echo "calculate the original energy"
+
+uglee_em $1 
+input=$(basename $1 .pdb)
+prodigy ${input}_start.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,Y,Z X > "summary_original"
+original_prodigy=$(grep "Predicted dissociation constant" "summary_original" | awk -F'e-' '{print $2}' | tr -d '^M')
+
+# If the value starts with a 0, remove it
+if [[ $original_prodigy == 0* ]]; then
+    original_prodigy=${original_prodigy#0}
+fi
+
+echo " The original prodigy value is $original_prodigy"
+rm ${input}_start.pdb
+rm summary_original
+echo "original energy calculated done"
+#######################
+
+
+
+#######################
+echo "MPNN starts"
+uglee_mpnn $1 > optimizing.log 2>&1
+echo "MPNN done"
+#######################
+
+
+#######################
+# ESMFOLD
+echo "ESMFOLD starts"
+uglee_esmfold  ${input}_mpnn_outputs >> optimizing.log 2>&1
+echo "ESMFOLD done"
+#######################
+
+
+
+
+
+#######################
+echo "align starts"
+mkdir patchdock_dir
+cp ${input}.pdb patchdock_dir
+rm ef.log falist ttt
+uglee_align patchdock_dir ef >> optimizing.log 2>&1
+#######################
+
+
+
+
+
+
+#######################
+echo "colabdock starts"
+uglee_export_chain_name patchdock_dir/${input}.pdb 
+
+mini=$(head -n 1 chain.txt)
+recep=$(sed -n '2p' chain.txt)
+
+find ./ -maxdepth 1 -name '*ef*.pdb' > Emfold_finished_list
+touch colabdock_finished_list
+
+
+while read -r filename; do
+    filename2=$(basename "$filename" .pdb)
+    uglee_colab_1vN_choose ${filename} ${mini},${recep}
+    
+    cd results_${filename2}/docked
+    for old in {1st,2nd,3rd,4th,5th}_best.pdb; do
+        new="${filename2}_${old}"
+        mv "$old" "$new"
+    done
+    cd ../..
+    
+    find ./results_${filename2}/docked -maxdepth 1 -name '*.pdb' >> colabdock_finished_list
+done < Emfold_finished_list
+
+rm LICENSE README.md chain.txt config.py extract_rest.py README.md requirements.txt main.py
+rm -r colabdesign colabdock params protein __pycache__ 
+
+echo " cdockrun_done"
+#######################
+
+
+
+
+#####################
+echo "Checking for clashes using Gromax"
+
+while read -r filename; do
+    if uglee_detectclash_gmx "$filename" | grep -q "Yes"; then
+        echo "Clash detected. Deleting $filename."
+        rm "$filename"
+    else
+        echo "No clash detected in $filename." 
+    fi
+done < colabdock_finished_list
+
+
+
+touch clash_gm_finished_list
+
+while read -r filename; do
+    filename2=$(basename "$filename" .pdb)
+    find "./results_${filename2}/docked" -maxdepth 1 -name '*.pdb' >> clash_gm_finished_list
+done < Emfold_finished_list
+
+echo " clashed in gm pdb files are deleted"
+#####################
+
+
+
+
+#####################
+echo "Starting Energy Minimization (EM)"
+
+while read -r filename; do
+    uglee_em "$filename" >> optimizing.log 2>&1
+done < clash_gm_finished_list
+
+echo "Energy Minimization (EM) completed"
+#####################
+
+
+
+
+
+
+#####################
+echo "Checking for clashes using PyMOL"
+
+while read -r filename; do
+    filename4=$(basename "$filename" .pdb)
+    if uglee_detectclash_pymol_2A "${filename4}_start.pdb" | grep -q "Yes"; then
+        echo "Clash detected. Deleting $filename."
+        rm "$filename"
+    else
+        echo "No clash detected in $filename."
+    fi
+done < clash_gm_finished_list
+
+touch clash_pymol_finished_list
+
+while read -r filename; do
+    filename2=$(basename "$filename" .pdb)
+    find "./results_${filename2}/docked" -maxdepth 1 -name '*.pdb' >> clash_pymol_finished_list
+done < Emfold_finished_list
+
+echo "Clashed PDB files deleted based on PyMOL results."
+#####################
+
+
+
+
+
+
+
+
+
+#####################
+echo "Starting PRODIGY analysis"
+echo "Comparing Kd values with the original one"
+
+while read -r filename; do
+    filename4=$(basename "$filename" .pdb)
+    prodigy "${filename4}_start.pdb" --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,Y,Z X > "log_${filename4}.log"
+    
+    new_result=$(grep "Predicted dissociation constant" "log_${filename4}.log" | awk -F'e-' '{print $2}' | tr -d '\r')
+    
+    if [[ -z "$new_result" ]]; then
+        echo "No Kd value found for $filename4. Skipping."
+        continue
+    fi
+    
+    if (( $(echo "$new_result > $original_prodigy" | bc -l) )); then
+        echo "Awesome! $filename has a better Kd"
+        grep "dissociation" "log_${filename4}.log" >> "summary_${filename4}"
+    else
+        echo "Kd value not improved. Deleting $filename."
+        rm "$filename"
+    fi
+    
+    rm "log_${filename4}.log"
+done < clash_pymol_finished_list
+
+echo "PRODIGY analysis completed"
+#####################
+
+
+
+
+
+
+
+#####################
+echo "Generating summary"
+
+find . -maxdepth 1 -name 'summary_*' ! -name 'summary_list' ! -name 'summary_all' > summary_list
+
+touch summary_all
+while read -r filename; do
+    echo -n "$filename " >> summary_all
+    head -n 1 "$filename" >> summary_all
+done < summary_list
+
+
+echo "Summary generated"
+echo "OPTIMIZING DONE!"
+#####################
+
+
+
+#####################
+# Check if the word "dissociation" is in summary_all
+if grep -q "dissociation" summary_all; then
+    echo "Better mini-protein found"
+    echo "To perform further optimization, please update the PDB file (e.g., name1_name2_name3.pdb)"
+else
+    echo "No better mini-protein found. Retrying with incremented directory name."
+    
+    current_dir=$(basename "$PWD")
+    parent_dir=$(dirname "$PWD")
+    
+    if [[ $current_dir =~ ^[0-9]+_ ]]; then
+        prefix=${current_dir%%_*}
+        suffix=${current_dir#*_}
+        new_prefix=$((prefix + 1))
+        new_dir="${new_prefix}_${suffix}"
+    else
+        new_dir="1_${current_dir}"
+    fi
+    
+    mkdir -p "$parent_dir/$new_dir"
+    cp "$1" "$parent_dir/$new_dir"
+    cp "rest" "$parent_dir/$new_dir"
+    cd "$parent_dir/$new_dir"
+    $0 "${1##*/}"
+fi
+#####################
+
+
+
+

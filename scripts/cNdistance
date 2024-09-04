@@ -1,0 +1,67 @@
+#!/bin/bash
+#echo "first prepare center containing the center coordination"
+echo "the distance between the center and the N-terminus of the miniprotein is added to the filename"
+#echo "cNdistance [pdbs folder]"
+
+if [ ${#} -eq 0 ]; then
+        echo "Please type input directory(ex.pdbs) after command."
+        echo "cNdistance [pdbs folder]"
+        exit 1
+elif [ ${#} -gt 1 ]; then
+	echo "Invalid file format"
+	exit 1
+else input_dir=$1
+fi
+
+if [ ! -d ${input_dir} ]; then
+        echo "no input pdb folder in this directory"
+        exit 1
+fi
+
+if [ ! -e center ]; then
+	echo "Prepare center file containing the center coordination"
+	exit 1
+fi
+
+if [ ! -d pdb_cNdistance ]; then
+	mkdir pdb_cNdistance
+else
+	mv -f pdb_cNdistance pdb_cNdistance_old
+	mkdir pdb_cNdistance
+fi
+
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+cp center pdb_cNdistance
+
+cd ${input_dir}
+find *.pdb > pdblist
+lines=`wc -l pdblist| awk '{printf ($1)}'`
+
+for f in $(seq 1 $lines)
+do
+pdbfile=`head -$f pdblist| tail -1`
+grep " X " $pdbfile | grep "ATOM" | head -1  > ca_temp
+
+x2=`cat ca_temp | awk '{print $7}'`
+y2=`cat ca_temp | awk '{print $8}'`
+z2=`cat ca_temp | awk '{print $9}'`
+
+variance_x=`echo "scale=1; ($x1 - $x2) * ($x1 - $x2)" | bc` 
+variance_y=`echo "scale=1; ($y1 - $y2) * ($y1 - $y2)" | bc` 
+variance_z=`echo "scale=1; ($z1 - $z2) * ($z1 - $z2)" | bc` 
+
+#echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc
+
+distance=`echo "scale=1; sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+echo $pdbfile
+cp $pdbfile ../pdb_cNdistance/${distance}_${pdbfile}
+done
+
+rm pdblist
+rm ca_temp
+
+
+echo "Done, output directory is pdb_cNdistance"

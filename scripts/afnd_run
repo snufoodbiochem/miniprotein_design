@@ -1,0 +1,53 @@
+#!/bin/bash
+#echo "af_run"
+#echo "run this script on the directory containing seqs"
+
+if [ ${#} -eq 0 ] ; then
+        echo "Please type input directory(ex.seqs) after command."
+        echo "af_run [input dir]"
+        exit 1
+elif [ ${#} -gt 1 ] ; then
+	echo "Invalid file format"
+	exit 1
+else 	input_dir=$1
+fi
+
+if [ ! -d ${input_dir} ]; then
+        echo "no input pdb folder in this directory"
+        exit 1
+fi
+
+find ${input_dir}/*fa > falist
+linenumber=`wc -l falist | awk '{printf ($1)}'`
+
+if [ ! -d af ]; then
+	mkdir af
+else
+	mv -f af af_old
+	mkdir af
+fi
+
+for f in $(seq 1 $linenumber)
+do
+        filename=`head -$f falist| tail -1`
+	grep -r -A 1 -h "sample=1" $filename > ${filename}sta
+	echo ">X" > tempfasta
+	head -2 ${filename}sta| tail -1 >> tempfasta
+	mv tempfasta ${filename}sta
+        cd seqs
+        find *fasta | xargs mv -t ../af
+        cd ..	
+
+done
+cd af
+find *.fasta | sort -r > af_inputlist
+
+for g in $(seq 1 $linenumber)
+do
+	inputfasta=`head -$g af_inputlist | tail -1`
+        tsp afpnd_monomer $inputfasta
+	sleep 10
+echo "Alphafold is running in background"
+done
+
+

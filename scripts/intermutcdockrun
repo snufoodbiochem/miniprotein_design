@@ -1,0 +1,146 @@
+#!/bin/bash
+echo "intermutcdockrun [receptor+mini complex pdb] [mini_chain,receptor_chain]"
+if [ ${#} -eq 0 ] ; then
+       echo "intermutcdockrun [receptor+mini complex pdb] [mini_chain,receptor_chain]"
+       exit 1
+fi
+
+if [ ${#} -ne 2 ] ; then
+       exit 1
+fi
+
+if [ ! -f $1 ] ; then
+echo "no pdb file!"
+exit 1
+fi
+
+complexpdb=$1
+chains=$2
+output="mtpdbmut"
+
+chain1=$(echo $chains | awk -F',' '{print $1}')
+chain2=$(echo $chains | awk -F',' '{print $2}')
+
+echo "run /usr/local/proteindesign/interfaceresidues.py" > inter.pml
+echo "load $complexpdb, complex"   >>inter.pml
+echo "foundResidues = interfaceResidues("complex", cA="c.  $chain1", cB="c.  $chain2")" >> inter.pml
+
+/usr/local/pymol/pymol -cq inter.pml > log
+
+cat log | grep chA | sed 's/\[/ /g' |  awk -F"[', ]+" '{print $4}' > interresidues
+
+mapfile -t targetresidues <interresidues
+
+
+
+aminoacid=("A" "L" "V" "I" "S" "T" "C" "Y" "F" "W" "D" "N" "E" "Q" "M" "G" "K" "R" "H" "P")
+if [ -f "mt.fasta" ]; then
+rm mt.fasta
+fi
+
+grep ATOM $complexpdb | grep " $chain1 "  >mini.pdb
+grep ATOM $complexpdb | grep " $chain2 " >receptor.pdb
+seq=$(pdb_tofasta mini.pdb | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+echo $seq
+
+for h in "${targetresidues[@]}"
+do
+
+  for f in $(seq 0 19)
+  do
+	  mutation_name="${seq:(($h-1)):1}${h}${aminoacid[$f]}"
+          modified_seq="${seq:0:$(($h-1))}${aminoacid[$f]}${seq:$h}"
+	  echo ">${mutation_name}"  >>mt.fasta
+          echo $modified_seq >> mt.fasta 
+  done
+
+
+done
+
+
+echo "substitution mutant sequences were generated"
+
+if [ ! -d "$output" ]; then
+	mkdir $output
+fi
+
+cd $output
+
+
+
+efold ../mt.fasta | tee log
+
+grep pLDDT log | awk '$16 < 80 {print $11}' >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	rm ${line}.pdb
+done
+
+
+#===========below copy and paste===============
+
+cd ..
+
+find $output -type f -name "*.pdb" > list
+
+mapfile -t array <list
+
+echo "==================================="
+
+
+for line in "${array[@]}"; do
+       echo "load $complexpdb, complex" >align.pml
+       echo "load $line, mini" >> align.pml
+       echo "alter mini, chain='$chain1'"     >>align.pml
+       echo "align mini, complex"     >>align.pml
+       echo "save ${line}, mini" >> align.pml
+       echo "quit" >> align.pml
+       /usr/local/pymol/pymol -cq align.pml >pymol.log
+       rmsd=$(grep Executive: pymol.log | awk '{print $4}')
+
+      grep ATOM ${line} > ${line}_
+      grep ATOM receptor.pdb >> ${line}_
+      echo "END"  >> ${line}_
+      mv ${line}_ $line
+       if (( $(echo "$rmsd > 0.50" | bc -l) )); then
+	       rm $line
+       fi
+       
+done
+
+cd $output
+filenumber=$(ls *pdb | wc -l)
+echo "$filenumber mutant complex pdbs are generated!"
+
+#cp ../$complexpdb WT.pdb
+
+ls *.pdb >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       cdockrun_MvN $line $chains
+done
+
+cdockrunsummary
+#=============================
+
+if [ ! -d "singlemutants" ] ; then
+	mkdir singlemutants
+fi
+
+mv *_complex.pdb singlemutants
+mv prodigy*.log singlemutants
+mv results_* singlemutants
+cp sorted_summary sorted_summary_singlemutants
+mv sorted_summary singlemutants
+cat sorted_summary_singlemutants
+echo "See sorted_summary_singlemutants"
+
+
+exit 1
+

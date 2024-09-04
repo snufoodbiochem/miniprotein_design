@@ -1,0 +1,23 @@
+#!/bin/bash
+export scaffold_dir=$3
+#mkdir pdbs
+#mkdir patchdock_out
+ls $scaffold_dir/*.pdb >scaffold_list
+linenumber=`wc -l < scaffold_list`
+for f  in $(seq $4 $2 $linenumber)
+do
+score1=0
+ligandpdb=$(head -$f scaffold_list| tail -1) 
+echo "$ligandpdb"
+buildParams_modi.pl $1 $ligandpdb 4 Default ${f}_params.txt
+patch_dock.Linux ${f}_params.txt $f.out >patch_dock_${f}.log
+score1=`grep "   1 |" $f.out| awk '{printf ("%05.0f",$3)}'`
+
+	  transOutput.pl $f.out 1 1
+	  mv $f.out.1.pdb pdbs/${score1}_${f}.pdb
+
+
+mv $f.out patchdock_out
+rm -f  ${f}_params.txt
+rm -f  patch_dock_${f}.log
+done

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+python3 /usr/local/proteindesign/uglee_calculate_center.py $1

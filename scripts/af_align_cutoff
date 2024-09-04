@@ -1,0 +1,35 @@
+#!/bin/bash
+echo "af_align [input dir] [af dir] [output dir]"
+input_dir=$1
+af_dir=$2
+output_dir=$3
+rm -rf TM_result
+cd $input_dir
+find *.pdb >../inputfilelist
+cd ..
+cat inputfilelist | sed 's/.pdb//g' >afdirlist
+mkdir temp
+linenumber=`wc -l inputfilelist| awk '{printf ($1)}'`
+for f in $(seq 1 $linenumber)
+do
+	filename=`head -$f inputfilelist| tail -1`
+	affilename=`head -$f afdirlist| tail -1`
+	grep " X " $input_dir/$filename > temp/$filename
+	echo "END" >> temp/$filename
+	echo "$af_dir/$affilename/ranked_0.pdb" >inputlist
+	echo "temp/$filename" >>inputlist
+        af_aligned_pdbname=`echo "$affilename" | awk -F "_" '{print $3}'`
+	mTM-align -i inputlist -o temp.pdb > log
+	rmsd=`grep RMSD log | grep -v pairwise | awk '{print $2}'`
+	#sed 's/ A / X /g' mTM_result/temp.pdb > mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb  
+	grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g'| sed 's/ B / Y /g'  >mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb
+	
+done
+rm -rf temp
+mv -f mTM_result $output_dir
+rm $output_dir/cc.pdb $output_dir/infile $output_dir/*.txt $output_dir/result.fasta $output_dir/temp.pdb
+
+#####################
+echo "10 files which have high RMSD value will be removed in the output directory"
+cd $output_dir
+ls -r *.pdb | head | xargs rm

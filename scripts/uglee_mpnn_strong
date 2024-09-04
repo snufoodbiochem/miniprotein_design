@@ -1,0 +1,109 @@
+#!/bin/bash
+
+#Check for arguments
+if [ "$#" -eq 0 ]; then
+    echo "./uglee_mpnn [target pdb] [target chain (optional, default is X)]"
+    exit 1
+elif [ "$#" -gt 2 ]; then
+    echo "Invalid file format"
+    exit 1
+fi
+
+# Set the target chain
+if [ "$#" -eq 1 ]; then
+    echo "target chain is X(default)"
+    target_chain="X"
+elif [ "$#" -eq 2 ]; then
+    echo "target chain is $2"
+    target_chain="$2"
+fi
+
+# Check for the pdb file
+if [[ $1 == *.pdb ]]; then
+    target_pdb=$1
+else
+    echo "./uglee_mpnn [target pdb] [target chain (optional, default is X)]"
+    exit 1
+fi
+
+
+
+# Extract the protein name from the pdb file path
+protein_name=$(basename "${target_pdb}" .pdb)
+
+# Activate the environment
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/mlfold
+# Make sure the output directory exists in the current directory
+output_dir="./${protein_name}_mpnn_outputs"
+if [ -d ${output_dir} ]; then
+    rm -r ${output_dir}
+fi
+mkdir -p "${output_dir}"
+
+
+# Run the protein MPNN script
+python /home/uglee/ProteinMPNN/protein_mpnn_run.py \
+    --pdb_path "${target_pdb}" \
+    --pdb_path_chains "${target_chain}" \
+    --out_folder "${output_dir}" \
+    --num_seq_per_target 10000 \
+    --sampling_temp "0.0001" \
+    --seed 37 \
+    --batch_size 1
+
+command_status=$?
+if [ $command_status -eq 0 ]; then
+    echo "==================succeeded======================"
+else
+    echo "=======================failed===================="
+    exit 1
+fi
+
+cp ${output_dir}/seqs/${protein_name}.fa ${output_dir}
+rm -r ${output_dir}/seqs
+
+cd ${output_dir}
+# Assume ${protein_name}.fa is given and contains your sequences
+file="${protein_name}.fa"
+
+# 2. Delete the top 4 lines from this .fa file
+tail -n +3 "$file" > temp.fa 
+# ?? ???
+awk '{
+    if (substr($0, 1, 1) == ">") {
+        if (NR > 1) printf "\n";
+        printf "%s", $0;
+    } else {
+        printf ", %s", $0;
+    }
+} END { printf "\n" }' "temp.fa" > temp2.fa
+
+# ???? ??
+awk -F', ' '{ for(i=1; i<=NF; i++) if ($i ~ /^seq_recovery=/) print $i, $0 }' "temp2.fa" | 
+sort -t= -k2,2nr |
+cut -d' ' -f2- > temp3.fa
+
+# ???
+awk -F", " '{
+    for (i=1; i<NF; i++) {
+        printf "%s", $i; 
+        if (i < NF-1) {
+            printf ", ";
+        }
+    }
+    printf "\n%s\n", $NF;
+}' temp3.fa > temp4.fa
+head -n 10 temp4.fa > temp5.fa
+
+awk '
+    BEGIN { sample_counter = 1 } # Initialize counter
+    {
+        if ($0 ~ /^>T=0.0001, sample=/) {
+            sub(/sample=[0-9]+/, "sample=" sample_counter, $0) # Replace the sample number
+            sample_counter++ # Increment the counter
+        }
+        print $0 # Print the line
+    }
+' "temp5.fa" > "${protein_name}.fa"
+
+rm temp*

@@ -1,0 +1,9 @@
+#!/bin/bash
+
+
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/pymolrdkit
+export PATH="/usr/local/pymol:$PATH"
+
+
+
+python3 /usr/local/proteindesign/uglee_align_ligand.py $1 $2

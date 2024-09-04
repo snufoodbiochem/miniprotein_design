@@ -1,0 +1,60 @@
+#!/usr/bin/bash
+if [ "$#" -ne 2 ]; then
+    echo "cdockrun [complex pdb_file] [mini chain,receptor chain]" 
+    echo " This restrain type is 1v1"
+    exit 1
+fi
+
+export CDOCK_PATH="/home/uglee/ColabDock"
+if [ ! -f "main.py" ]; then
+     cp -r $CDOCK_PATH/* .
+fi
+
+
+pdbname=$(basename $1 .pdb)
+
+
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/colabdock
+
+
+# Extract 1v1 restraints. This assumes 'extract_rest.py' outputs the restraint in a specific format on the second line
+python3 extract_rest.py $1 $2 $2 1v1 | sed -n '2p' > rest
+restrain=$(cat rest)
+
+# Begin constructing the 'config.py' file with necessary configurations
+echo "import ml_collections" > config.py
+echo "import joblib" >> config.py
+echo "config = {" >> config.py
+echo "    'save_path': './results_$pdbname', " >> config.py
+printf "    'template': '" >> config.py
+printf "$1" >> config.py
+echo "' ," >> config.py
+printf "    'native': '" >> config.py
+printf "$1" >> config.py
+echo "' ," >> config.py
+printf "     'chains': '" >> config.py
+printf "$2" >> config.py
+echo "' , " >> config.py
+echo "    'fixed_chains': None, " >> config.py
+echo "    'res_thres': 8.0, " >> config.py
+# Specify the 'rest_1v1' field with the extracted restraint
+printf  "    'rest_1v1': "      >> config.py
+echo   "$restrain  ,"          >> config.py
+echo "    'rest_1vN': None ," >> config.py
+echo "    'rest_MvN': None , " >> config.py
+echo "     'rep_thres': 8.0, " >> config.py
+echo "     'rest_rep': None, " >> config.py
+echo "     'crop_len': None, " >> config.py
+echo "     'rounds': 2, " >> config.py
+echo "    'steps': 50, " >> config.py
+echo "   'save_every_n_step': 1, " >> config.py
+echo "    'use_multimer': True, " >> config.py
+echo "    'data_dir': '/ssddata/colabdock_DB/params', " >> config.py
+echo " 'bfloat': True, " >> config.py
+echo " } " >> config.py
+echo "config = ml_collections.ConfigDict(config)" >> config.py
+
+
+
+python3 main.py > colab_log.txt 2>&1
+

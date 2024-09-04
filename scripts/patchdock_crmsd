@@ -1,0 +1,88 @@
+#!/bin/bash
+
+if [ ${#} -eq 0 ]; then
+        echo "usage: patchdock_crmsd [receptor.pdb] [ligand.pdb] [ligand chain]"
+        exit 1
+elif [ ${#} -eq 1 ]; then
+      echo "usage: patchdock_crmsd [receptor.pdb] [ligand.pdb] [ligand chain]"
+        exit 1
+elif [ ${#} -eq 2 ] ; then
+       echo "usage: patchdock_crmsd [receptor.pdb] [ligand.pdb] [ligand chain]"
+	exit 1
+fi
+
+if [[ $1 == *.pdb ]]; then
+	receptor_pdb=$1
+	receptor=`basename $1 .pdb`
+else
+	echo "Invalid receptor pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [[ $2 == *.pdb ]]; then
+	ligand_pdb=$2
+	ligand=`basename $2 .pdb`
+else
+	echo "Invalid ligand pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${receptor_pdb} ]; then
+        echo "no receptor protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -e ${ligand_pdb} ]; then
+        echo "no ligand protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -d ${receptor}_${ligand} ]; then
+	mkdir ${receptor}_${ligand}
+else
+	mv -f ${receptor}_${ligand} ${receptor}_${ligand}_old
+	mkdir ${receptor}_${ligand}
+
+fi
+
+
+
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+chainid=$3
+
+cd ${receptor}_${ligand}
+receptor_=${receptor}_
+cp ../$1 .
+cp ../$2 .
+
+buildParams.pl $1 $2
+patch_dock.Linux params.txt ${receptor_}
+
+
+
+transOutput.pl ${receptor_} 1 500
+
+
+find *.pdb > pdblist
+lines=`wc -l pdblist| awk '{printf ($1)}'`
+for f in $(seq 1 $lines)
+do
+	pdbfile=`head -$f pdblist| tail -1`
+	pdb_selchain -$chainid $pdbfile | grep " CA " $pdbfile | grep "ATOM" > ca_temp
+	variance_x=`awk -v m="$x1" '{sum += ($7-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+	variance_y=`awk -v m="$y1" '{sum += ($8-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+	variance_z=`awk -v m="$z1" '{sum += ($9-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+	#echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc
+	rmsd=`echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+	echo ${pdbfile}
+	mv $pdbfile ${rmsd}_${pdbfile}
+done
+#rm pdblist
+rm ca_temp
+
+rm -f *.txt
+
+echo "Done, output directory is ${receptor}_${ligand}"

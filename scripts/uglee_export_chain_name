@@ -1,0 +1,32 @@
+#!/bin/bash
+mini=""  # For 'X'
+recep=""  # For non-'X' alphabets, concatenated as a string
+
+# File to process
+file="$1"
+
+# Read the .pdb file line by line
+while read -r line; do
+    # Extract the fifth column value
+    alpha=$(echo "$line" | awk '{print $5}')
+    
+    # Check if it's an alphabetic character
+    if [[ $alpha =~ ^[A-Za-z]$ ]]; then
+        # Check if it's 'X'
+        if [ "$alpha" == "X" ]; then
+            mini="X"  # Assign to mini
+        else
+            # For non-'X' alphabets, append uniquely to recep
+            if [[ ! $recep =~ $alpha ]]; then
+                recep+="$alpha "
+            fi
+        fi
+    fi
+done < "$1"
+
+# Print the results
+echo "Mini: $mini"
+echo "Recep: $recep"
+
+echo $mini > chain.txt
+echo $recep >> chain.txt

@@ -1,0 +1,5 @@
+#!/bin/bash
+output_dir=$PWD
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/esmfold
+python3 /home/uglee/esm/scripts/fold.py -i $1 -o $output_dir
+

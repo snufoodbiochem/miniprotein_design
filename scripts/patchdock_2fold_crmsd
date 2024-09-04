@@ -1,0 +1,45 @@
+#!/bin/bash
+echo "Usage: patchdock_2fold_crmsd [miniprotein.pdb]"
+echo "prepare the center file"
+
+receptor_pdb=$1
+sed 's/ X / Z /g' $1 > ligand.pdb 
+receptor=`basename $1 .pdb`
+ligand=$receptor
+
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+
+
+buildParams.pl $1 ligand.pdb
+patch_dock.Linux params.txt $receptor
+
+transOutput.pl $receptor 1 500
+
+for f in $(seq 1 500)
+do
+	ananas -C 0.4 $receptor.$f.pdb > $f.log
+	if ! grep "Symmetry group : " $f.log  >/dev/null 2>&1 ; then
+		rm $receptor.$f.pdb
+		rm $f.log
+	else
+		grep " CA " $receptor.$f.pdb | grep " Z " | grep "ATOM" > ca_temp
+		variance_x=`awk -v m="$x1" '{sum += ($7-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+		variance_y=`awk -v m="$y1" '{sum += ($8-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+		variance_z=`awk -v m="$z1" '{sum += ($9-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+
+		rmsd=`echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+		mv $receptor.$f.pdb ${rmsd}_${receptor}.${f}.pdb
+
+	fi
+
+done
+
+rm -f *.txt
+rm -f *.out
+
+grep -C 2 "Symmetry group : " *.log > symmetry_result
+
+echo "Done!  "

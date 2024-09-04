@@ -1,0 +1,82 @@
+#!/bin/bash
+
+
+if [ ${#} -eq 0 ]; then
+        echo "Usage1: crmsd [pdb-containing dir having miniproteins by patchdock]"
+        echo "Usage2: center file should be loacted in working directory"  
+        exit 1
+fi
+
+
+if [ ${#} -eq 1 ]; then
+    input_dir=$1
+fi
+
+if [ ! -d ${input_dir} ]; then
+    echo "no input pdb folder in this directory"
+    exit 1
+fi
+
+if [ ! -e center ]; then
+	echo "Prepare center file containing the center coordination"
+	exit 1
+fi
+
+# Check and prepare the output directories
+output_dir="./pdb_crmsd"
+if [ -d ${output_dir} ]; then
+    rm -r pdb_crmsd
+fi
+
+mkdir -p "${output_dir}"
+chmod 755 "${output_dir}"
+
+
+
+# load center, ignore comments, and extract x,y,z
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+cp center ${output_dir}
+
+# get into input_directory
+cd ${input_dir}
+
+## extract the number of miniproteins
+find *.pdb > pdblist
+# wc -l pdblist-> counting pdbs, awk -> print the number of lines =>lines
+lines=`wc -l pdblist| awk '{printf ($1)}'`
+
+# for loop to calculate crmsd
+for f in $(seq 1 $lines)
+do
+    # find pdbfile name
+    pdbfile=$(head -$f pdblist | tail -1)
+    # get into pdbfile that have corresponding pdbfile name
+    # extract CA atoms, miniprotein, and ATOM coordinates
+    grep " CA " $pdbfile | grep " X " | grep "ATOM" > ca_temp
+    # m = ????, $7,8,9? ????? ??, cnt++? ??? ??? ??=> print? ??? ??
+    variance_x=`awk -v m="$x1" '{sum += ($7-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+    variance_y=`awk -v m="$y1" '{sum += ($8-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+    variance_z=`awk -v m="$z1" '{sum += ($9-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+    #echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc
+    rmsd=`echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+    output_dir_abs=$(realpath "${output_dir}")
+    cp "${pdbfile}" ../
+    cd ../
+    mv "${pdbfile}" "${rmsd}_${pdbfile}"
+    mv "${rmsd}_${pdbfile}"  "${output_dir}"
+    cd ${input_dir} 
+done
+rm pdblist
+rm ca_temp
+
+
+command_status=$?
+if [ $command_status -eq 0 ]; then
+    echo "==================succeeded======================"
+else
+    echo "=======================failed===================="
+    exit 1
+fi

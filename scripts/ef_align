@@ -1,0 +1,79 @@
+#!/bin/bash
+echo "ef_align [input dir=pdb_crmsd] [rmsd cutoff value, default = 2]"
+
+cutoff=2.0
+
+if [ ${#} -eq 0 ] ; then
+	echo "Please type input directory(ex.pdb_crmsd) after command."
+	echo "ef_align [input dir] [rmsd cutoff, default=2]"
+	exit 1
+elif [ ${#} -gt 3 ] ; then
+	echo "Invalid argument number"
+	exit 1
+else 
+	input_dir=$1
+	cutoff=$2
+fi
+
+if [ ! -d ${input_dir} ]; then
+        echo "no input pdb folder in this directory"
+        exit 1
+fi
+
+af_dir="ef"
+output_dir="af_align_result"
+
+if [ ! -d ${output_dir} ]; then
+mkdir $output_dir
+else
+	mv $output_dir $output_dir_old
+	mkdir $output_dir
+fi
+
+
+rm -rf mTM_result
+cd $input_dir
+ls *.pdb >../inputfilelist
+cd ..
+cd ef
+ls *.pdb >../affilelist
+cd ..
+mkdir temp
+mkdir temp2
+grep "Predicted structure" ef.log | awk '{print $16 "  " $11 ".pdb"}' > efold.result
+
+for f in $(sed -n '=' inputfilelist)
+do
+	filename=`head -$f inputfilelist | tail -1`
+	for g in 1 2 3 4 5
+	do
+	affilename=`head -$((5*($f-1)+$g)) affilelist | tail -1`
+	pLDDT=`head -$((5*($f-1)+$g)) efold.result | tail -1 | awk -F ',' '{print $1}'`
+	grep " X " $input_dir/$filename > temp/$filename
+	echo "END" >> temp/$filename
+	echo "$af_dir/$affilename" >inputlist
+	echo "temp/$filename" >>inputlist
+	echo $affilename
+        af_aligned_pdbname=`basename ${filename} .pdb | awk -F "_" '{print $3}'`
+	echo $af_aligned_pdbname
+	mTM-align -i inputlist -o temp.pdb > tm.log
+	rmsd=`grep RMSD tm.log | grep -v pairwise | awk '{print $2}'`
+	echo $rmsd
+        echo $pLDDT
+
+        if   [[ `echo "$pLDDT < 80.0" | bc` -eq 1 ]] ; then
+		echo "pLDDT is too low"
+	else
+	#sed 's/ A / X /g' mTM_result/temp.pdb > mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb  
+	grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >temp2/${rmsd}_${af_aligned_pdbname}-af$g.pdb
+        fi
+        done	
+done
+rm $output_dir/*
+mv temp2/*.pdb $output_dir
+rm $output_dir/1*
+rm $output_dir/2*
+rm -rf temp temp2
+
+rm inputlist inputfilelist affilelist
+

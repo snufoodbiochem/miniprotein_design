@@ -1,0 +1,313 @@
+#!/bin/bash
+
+if [ ${#} -lt 3 ]; then
+	echo "ISS [receptor pdb] [pdb_containing dir] [n/c]"
+	exit 1
+fi
+
+echo "Make sure that your are running this script after picking out pdbs based on Patchdock score and crmsd"
+
+# Receptor PDB file
+receptor=$1
+
+# Save the current directory
+initial_dir=$(pwd)
+
+# Directory containing PDB files
+input_dir=$2
+
+# Optional argument to determine the sequence order
+target_location=${3:-c}  # Default to 'c' if no third argument is provided
+
+###########################################################################################
+#Runnign MPNN
+
+# Loop through all PDB files in the input directory
+for pdb_file in "$input_dir"/*.pdb; do
+    # Check if there are no PDB files in the directory
+    if [ ! -e "$pdb_file" ]; then
+        echo "No PDB files found in the directory."
+        exit 1
+    fi
+
+    # Print the name of the current PDB file
+    echo "Processing $pdb_file..."
+
+    # Run ligandmpnn on the PDB file
+    ligandmpnn "$pdb_file"
+
+    # Extract the base name without the .pdb extension
+    name=$(basename "$pdb_file" .pdb)
+
+    # Navigate to the fastas directory
+    cd fastas || { echo "Directory 'fastas' not found."; exit 1; }
+
+    # Navigate to the output directory for the current PDB file
+    cd "${name}_outputs" || { echo "Directory '${name}_outputs' not found."; exit 1; }
+
+    # Run split_fa on the corresponding .fa file
+    split_fa "${name}.fa"
+
+    # Return to the initial directory
+    cd "$initial_dir"
+
+done
+
+echo "Processing completed for all PDB files."
+
+###########################################################################################
+
+###########################################################################################
+#Making receptor_miniprotein complex fasta file without linker
+
+if [ ! -d "complex_fastas" ]; then
+        mkdir complex_fastas
+fi
+
+receptor_seq=$(pdb_tofasta "$receptor" | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+
+# Function to calculate distance between two points
+calculate_distance() {
+    local x1=$1
+    local y1=$2
+    local z1=$3
+    local x2=$4
+    local y2=$5
+    local z2=$6
+    echo "scale=2; sqrt(($x2 - $x1)^2 + ($y2 - $y1)^2 + ($z2 - $z1)^2)" | bc
+}
+
+# Function to extract coordinates of the first and last residues
+extract_coordinates() {
+    local pdb_file=$1
+    local position=$2
+    if [ "$position" == "first" ]; then
+        grep "^ATOM" "$pdb_file" | grep " X " | grep " CA " | head -n 1 | awk '{print $7, $8, $9}'
+    elif [ "$position" == "last" ]; then
+        grep "^ATOM" "$pdb_file" | grep " X " | grep " CA " | tail -n 1 | awk '{print $7, $8, $9}'
+    fi
+}
+
+
+# Loop through all Fasta files
+for fasta_file in fastas/*_outputs/*.fasta; do
+
+        # Print the name of the current Fasta file
+        echo "Processing $fasta_file..."
+
+        name=$(basename "$fasta_file" .fasta)
+        ori_name=$(basename $fasta_file | sed -E 's/_[0-9]+\.fasta$//')
+        miniprotein_pdb="${input_dir}/${ori_name}.pdb"
+
+        # Extract coordinates of the terminal residues
+        if [ "$target_location" == "n" ]; then
+                miniprotein_coords=$(extract_coordinates "$miniprotein_pdb" "last")
+                receptor_coords=$(extract_coordinates "$receptor" "first")
+        elif [ "$target_location" == "c" ]; then
+                receptor_coords=$(extract_coordinates "$receptor" "last")
+                miniprotein_coords=$(extract_coordinates "$miniprotein_pdb" "first")
+        else
+                echo "Invalid target location option. Please provide target location"
+                exit 1
+        fi
+
+        # Calculate the distance
+        IFS=' ' read -r -a miniprotein_coords_array <<< "$miniprotein_coords"
+        IFS=' ' read -r -a receptor_coords_array <<< "$receptor_coords"
+        distance=$(calculate_distance "${miniprotein_coords_array[@]}" "${receptor_coords_array[@]}")
+
+        # Determine the number of linker sequences (rounded to nearest integer)
+        linkers=$(echo "($distance / 4) + 1" | bc -l | awk '{printf "%.0f", $0}')
+
+        # Generate linker sequence
+        linker_seq=$(printf "%${linkers}s" | tr ' ' 'G')
+
+        miniprotein_seq=$(grep -v '^>' "$fasta_file" | sed ':a;N;$!ba;s/\n//g')
+
+
+         # Make complex sequence
+         if [ "$target_location" == "n" ]; then
+                 complex_seq="${miniprotein_seq}${linker_seq}${receptor_seq}"
+         elif [ "$target_location" == "c" ]; then
+                 complex_seq="${receptor_seq}${linker_seq}${miniprotein_seq}"
+         fi
+
+        # Write the complex sequence to a new file
+        echo ">${name}" > "${name}_complex.fasta"
+        echo "$complex_seq" >> "${name}_complex.fasta"
+
+        mv "${name}_complex.fasta" complex_fastas
+
+done
+
+############################################################################################
+
+############################################################################################
+#Running Alphafold
+#It is okay to change path as you want
+#EX) export PATH="~/miniconda3/bin:$PATH"
+
+export DOWNLOAD_DIR="/ssddata/alphafold_DB"
+export output_dir="$initial_dir/complex"
+export PATH="/home/uglee/miniconda3/bin:$PATH"
+export PATH="/usr/local/bin:$PATH"
+
+if [ ! -d "$output_dir" ]; then
+	mkdir $output_dir
+fi
+
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/alphafold
+
+for fasta_file in $initial_dir/complex_fastas/*.fasta; do
+	echo "Processing file: $fasta_file"
+
+	name=$(basename $fasta_file .fasta)
+       
+	# AlphaFold prediction script
+	/home/uglee/alphafold-2.3.2/run_alphafold.sh \
+	-d $DOWNLOAD_DIR \
+	-o $output_dir \
+	-l 1   \
+	-m multimer \
+	-c reduced_dbs \
+	-f "$fasta_file" \
+	-r true \
+	-t 2023-05-14
+
+	cd $output_dir
+	cd $name
+
+	source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/alphapickle
+	python3 /home/uglee/alphapickle/run_AlphaPickle.py -od ./
+	rm -rf *pkl msas
+
+        cp $output_dir/$name/relaxed_model_*.pdb $output_dir
+        mv $output_dir/relaxed_model_*.pdb $output_dir/${name}_relaxed_model.pdb
+
+	conda deactivate
+
+	
+	
+done
+
+###############################################################################################
+
+###############################################################################################
+#Align to original pdb file to calculate rmsd
+
+cd $initial_dir
+
+# Create a file to store the RMSD scores
+align_output_file="alignment_summary"
+echo -e "Complex PDB File\tRMSD Score" > "$align_output_file"
+
+if [ ! -f align_pdb.py ]; then
+        cp /nashome/minho/scripts/align_pdb.py .
+fi
+
+
+# Loop through all PDB files in the 'complex' directory
+for complex_pdb in ${output_dir}/*.pdb; do
+    echo "Processing $complex_pdb..."
+
+    # Extract the base name without the .pdb extension and remove trailing _<number>
+
+    name=$(basename $complex_pdb)
+    original=$(echo ${name} | awk -F'_' '{print $1"_"$2"_"$3}')
+    mini_name=$(echo ${name} | awk -F'_' '{print $1"_"$2"_"$3"_"$4}')
+
+    original_pdb="${input_dir}/$original.pdb"
+
+
+    # Calculate the total number of residues in the miniprotein, receptor, and complex
+    miniprotein_seq=$(grep -v '^>' "fastas/${original}_outputs/${mini_name}.fasta" | sed ':a;N;$!ba;s/\n//g')
+    total_miniprotein_residues=${#miniprotein_seq}
+    total_receptor_residues=${#receptor_seq}
+    complex_seq=$(grep -v '^>' "complex_fastas/${mini_name}_complex.fasta" | sed ':a;N;$!ba;s/\n//g')
+    total_complex_residues=${#complex_seq}
+
+    echo $total_miniprotein_residues
+    echo $total_receptor_residues
+    echo $total_complex_residues
+
+    # Determine the start and end residue numbers of the linker sequence based on target location
+    if [ "$target_location" == "n" ]; then
+        linker_start=$((total_miniprotein_residues + 1))
+        linker_end=$((total_complex_residues - total_receptor_residues))
+    elif [ "$target_location" == "c" ]; then
+        linker_start=$((total_receptor_residues + 1))
+        linker_end=$((total_complex_residues - total_miniprotein_residues))
+    else
+        echo "Invalid target location option. Please provide target location."
+        exit 1
+    fi
+
+    # Create a residue range string for the linker
+    exclude_residues="${linker_start}-${linker_end}"
+
+    # Align the complex PDB with the original receptor PDB excluding linker residues and calculate RMSD
+    /usr/local/pymol/pymol -c align_pdb.py -- "$original_pdb" "$complex_pdb" "tmp_rmsd" "$exclude_residues"
+
+    # Extract the RMSD from the temporary file
+    rmsd=$(cat "tmp_rmsd")
+
+    echo -e "${name}\t${rmsd}" >> "$align_output_file"
+
+    rm -f "tmp_rmsd"
+done
+
+sort -k2 -n "$align_output_file" > "sorted_${align_output_file}"
+
+
+
+################################################################################################
+
+
+echo "Predicting complex structures is done."
+echo "Check complex directory"
+
+
+
+
+
+# Just in case, if there is an error for calculating RMSD, use this older version of script to calculate it. 
+# Note that align_pdb.py file for older version is named "align_pdb_old.py"
+
+# Loop through all PDB files in the 'complex' directory
+#for complex_pdb in ${output_dir}/*.pdb; do
+    #echo "Processing $complex_pdb..."
+
+    #ori_name=$(basename $complex_pdb | sed -E 's/_[0-9]+\.pdb$//')
+    #original=$(echo ${ori_name} | awk -F'_' '{print $1"_"$2"_"$3}')
+
+    #name=$(basename $complex_pdb)
+
+    #original_pdb="${input_dir}/$original.pdb"
+
+    # Align the complex PDB with the original receptor PDB and calculate RMSD
+    #/usr/local/pymol/pymol -c align_pdb.py -- "$original_pdb" "$complex_pdb" "tmp_rmsd"
+
+    # Extract the RMSD from the temporary file
+    #rmsd=$(cat "tmp_rmsd")
+
+    #echo -e "${name}\t${rmsd}" >> "$align_output_file"
+
+    #rm -f "tmp_rmsd"
+
+#done
+
+#sort -k2 -n "$align_output_file" > "sorted_${align_output_file}"
+
+################################################################################################
+
+
+
+
+
+
+
+
+
+
+
+

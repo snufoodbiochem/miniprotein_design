@@ -1,0 +1,21 @@
+#!/bin/bash
+echo "gmx_extract_pdb [final ns] [step number, default=100]"
+echo "run this script in gmx folder containing md_0_1.tpr and md_0_1_noPBC.xtc"
+
+final_ns=$1
+step_number=$2
+
+if [ ${#} -eq 1 ]; then
+        step_number=100
+fi
+
+interval_ps=$(( ${final_ns}/${step_number}*1000 ))
+
+for f in $(seq 0 ${step_number})
+do
+picosecond=$(( $f*${interval_ps} ))
+echo -e 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -o start.pdb -dump $picosecond 
+sed 's/ HIS/ ZIS/g' start.pdb | grep -v ' H' | grep -v 'SOL' | grep -v 'NA ' | grep -v 'CL '|sed 's/ ZIS/ HIS/g' > temp.pdb
+sed 's/CD  ILE/CD1 ILE/g' temp.pdb |sed 's/O1 /O  /g' | sed 's/O2 /OXT/g' | sed 's/ A / X /g' > md_${picosecond}.pdb
+done
+

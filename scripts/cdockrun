@@ -1,0 +1,49 @@
+#!/usr/bin/bash
+if [ "$#" -ne 2 ]; then
+    echo "cdockrun pdb_file chains" 
+    exit 1
+fi
+
+pdbname=$(basename $1 .pdb)
+export PATH="/home/hnc/miniconda3/bin:$PATH"
+export CDOCK_PATH="/home/hnc/CDock"
+source activate colabdock
+
+if [ ! -f "main.py" ]; then
+     cp -r $CDOCK_PATH/* .
+fi
+
+python extract_rest.py $1 $2 $2 1vN | sed -n '2p'> rest
+restrain=$(cat rest)
+echo "import ml_collections" > config.py
+echo "import joblib" >> config.py
+echo "config = {" >> config.py
+echo "    'save_path': './results_$pdbname', " >> config.py
+printf "    'template': '"    >> config.py
+printf $1                      >> config.py
+echo "' ,"                     >> config.py
+printf "    'native': '"       >> config.py
+printf $1                     >> config.py
+echo "' ,"                    >> config.py
+printf "     'chains': '"            >> config.py
+printf $2                       >> config.py
+echo "' , "                     >> config.py
+echo "    'fixed_chains': None, "   >> config.py
+echo "    'res_thres': 8.0, "  >> config.py
+echo "    'rest_1v1': None ,"  >> config.py
+printf  "    'rest_1vN': "      >> config.py
+echo   "$restrain  ,"          >> config.py
+echo "    'rest_MvN': None , "  >> config.py
+echo "     'rep_thres': 8.0, "  >> config.py
+echo "     'rest_rep': None, " >> config.py
+echo "     'crop_len': None, " >> config.py
+echo "     'rounds': 2,      " >> config.py
+echo "    'steps': 50,       " >> config.py
+echo "   'save_every_n_step': 1, " >> config.py
+
+echo "    'data_dir': '/ssddata/colabdock_DB/params', " >> config.py
+echo " 'bfloat': True,  "     >>config.py
+echo " } "                    >> config.py
+echo "config = ml_collections.ConfigDict(config) " >>config.py
+
+python main.py

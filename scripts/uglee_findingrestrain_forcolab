@@ -1,0 +1,38 @@
+#!/bin/bash
+# Step 0: Ask how many receptor residue numbers the user wants to set
+echo "!!!!!!!!!!Important: You must usee uglee_clean_pdb to clean the pdb file before using this script"
+echo -n "How many receptor residue numbers do you want to set? "
+read receptor_count
+
+# Validate input to ensure it's a number
+if ! [[ "$receptor_count" =~ ^[0-9]+$ ]]; then
+    echo "Please enter a valid number."
+    exit 1
+fi
+
+# Step 1: Ask for the residue number of the mini-protein
+echo -n "Enter the residue number of the mini-protein: "
+read mini_protein_residue
+
+# Initialize an array to hold receptor residue numbers
+declare -a receptor_residues
+
+# Steps 2-4: Loop to ask for receptor residue numbers
+for (( i=1; i<=receptor_count; i++ )); do
+    echo -n "Enter receptor residue number $i: "
+    read residue
+    receptor_residues+=("$residue")
+done
+
+# Construct the receptor residue string with commas and spaces
+receptor_residues_string=$(printf ", %s" "${receptor_residues[@]}")
+receptor_residues_string=${receptor_residues_string:2} # Remove leading comma and space
+
+# Step 5 & 6: Produce and display the output
+if [ -f rest ]; then
+    rm rest
+fi
+echo "[[$mini_protein_residue, [$receptor_residues_string]]]" > rest
+echo "rest is made!"
+
+

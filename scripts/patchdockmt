@@ -1,0 +1,29 @@
+#!/bin/bash
+
+if [ ! -d mtpdbs ] ; then
+mkdir mtpdbs
+fi
+
+if [ ! -f mtminilist ] ; then
+	find *_mt.pdb > mtminilist
+fi
+
+linenumber=`wc -l mtminilist | awk '{printf ($1)}'`
+echo $linenumber
+for f  in $(seq $3 $2 $linenumber)
+do
+   ligandpdb=$(head -$f mtminilist| tail -1) 
+   cat ${ligandpdb} | sed 's/ A / X /g' > temp.pdb
+   grep ATOM temp.pdb > ${ligandpdb}  
+   echo "$ligandpdb"
+   buildParams_modi.pl $1 "$ligandpdb" 4 Default ${f}_params.txt
+   patch_dock.Linux ${f}_params.txt $f.out >patch_dock_${f}.log
+   score1=`grep "   1 |" $f.out| awk '{printf ("%05.0f",$3)}'`
+   transOutput.pl $f.out 1 1
+   mv $f.out.1.pdb mtpdbs/${score1}_${f}.pdb
+
+   rm -f ${f}.out 
+   rm -f ${f}_params.txt
+   rm -f patch_dock_${f}.log
+done
+

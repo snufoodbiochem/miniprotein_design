@@ -1,0 +1,20 @@
+#!/bin/bash
+echo "the third value is moved to the fist place"
+find *.pdb > pdblist
+find *.pdbqt >> pdblist
+for f in $(sed -n '=' pdblist)
+do
+oldpdbfile=`head -$f pdblist| tail -1`
+	ext=`echo $oldpdbfile  | rev | cut -d '.' -f 1 | rev`
+	file_name=`basename $oldpdbfile .$ext` 
+	echo $file_name
+rmsd=`echo $file_name | awk -F "_" '{print $1}'`
+score=`echo $file_name | awk -F "_" '{print $2}'`
+restname=`echo $file_name | awk -F "_" '{print $3}'`
+newpdbfile=${restname}_${rmsd}_${score}.$ext
+mv $oldpdbfile $newpdbfile
+done
+rm pdblist
+ls
+echo " "
+echo "Done, created by HNC, 2022"

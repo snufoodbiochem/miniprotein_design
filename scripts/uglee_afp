@@ -1,0 +1,58 @@
+#!/bin/bash
+
+
+# format check
+if [ ${#} -ne 1 ]; then
+    echo "Usage: ./afp_uglee [fasta file]"
+    exit 1
+fi
+
+if [[ $1 != *.fasta ]]; then
+    echo "Invalid file format, please type [*.fasta] file"
+    exit 1
+fi
+
+# remove the .fasta of protein.fasta
+inputfastaname=$(basename $1 .fasta)
+# make output directory
+output_directory="${inputfastaname}_output"
+# set the download directory
+export DOWNLOAD_DIR="/ssddata/alphafold_DB"
+
+# conda activate
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/alphafold
+
+# delete folder
+if [ -d $output_directory ]; then
+    rm -r $output_directory
+fi
+
+mkdir $output_directory || { echo "Failed to create results_alpha directory"; exit 1; }
+
+~/alphafold-2.3.2/run_alphafold.sh \
+-d $DOWNLOAD_DIR \
+-o $output_directory \
+-l 1   \
+-m multimer \
+-c reduced_dbs \
+-f $1 \
+-r true \
+-t 2023-05-14
+
+command_status=$?
+if [ $command_status -eq 0 ]; then
+    echo "==================succeeded======================"
+else
+    echo "=======================failed===================="
+    exit 1
+fi
+
+mv ./$output_directory/$inputfastaname/* ./$output_directory/
+rm -r ./$output_directory/$inputfastaname/
+
+
+cd $output_directory
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/alphapickle
+python3 ~/alphapickle/run_AlphaPickle.py -od ./
+rm -rf *pkl msas
+

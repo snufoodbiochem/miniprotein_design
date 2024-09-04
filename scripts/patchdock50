@@ -1,0 +1,83 @@
+#!/bin/bash
+
+base=$2
+if [ ${#} -eq 0 ] ; then
+        echo "Please type receptor pdb after command"
+        echo "patchdock10 [receptor.pdb] [restart number (optional)]"
+        exit 1
+elif [ ${#} -eq 1 ]; then
+	base=0
+fi 
+
+if [[ $1 == *.pdb ]] ; then
+	receptor_pdb=$1
+else
+	echo "Invalid file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${receptor_pdb} ]; then
+        echo "no receptor protein pdb file in this directory"
+        exit 1
+fi
+
+mkdir pdbs
+mkdir patchdock_out
+
+a1=$((1 + $base))
+a2=$((2 + $base))
+a3=$((3 + $base))
+a4=$((4 + $base))
+a5=$((5 + $base))
+a6=$((6 + $base))
+a7=$((7 + $base))
+a8=$((8 + $base))
+a9=$((9 + $base))
+a10=$((10 + $base))
+a11=$((11 + $base))
+a12=$((12 + $base))
+a13=$((13 + $base))
+a14=$((14 + $base))
+a15=$((15 + $base))
+a16=$((16 + $base))
+a17=$((17 + $base))
+a18=$((18 + $base))
+a19=$((19 + $base))
+a20=$((20 + $base))
+a21=$((21 + $base))
+a22=$((22 + $base))
+a23=$((23 + $base))
+a24=$((24 + $base))
+a25=$((25 + $base))
+a26=$((26 + $base))
+a27=$((27 + $base))
+a28=$((28 + $base))
+a29=$((29 + $base))
+a30=$((30 + $base))
+a31=$((31 + $base))
+a32=$((32 + $base))
+a33=$((33 + $base))
+a34=$((34 + $base))
+a35=$((35 + $base))
+a36=$((36 + $base))
+a37=$((37 + $base))
+a38=$((38 + $base))
+a39=$((39 + $base))
+a40=$((40 + $base))
+a41=$((41 + $base))
+a42=$((42 + $base))
+a43=$((43 + $base))
+a44=$((44 + $base))
+a45=$((45 + $base))
+a46=$((46 + $base))
+a47=$((47 + $base))
+a48=$((48 + $base))
+a49=$((49 + $base))
+a50=$((50 + $base))
+
+
+
+
+parallel patchdockmulti $1 50 ::: $a1 $a2 $a3 $a4 $a5 $a6 $a7 $a8 $a9 $a10 $a11 $a12 $a13 $a14 $a15 $a16 $a17 $a18 $a19 $a20 $a21 $a22 $a23 $a24 $a25 $a26 $a27 $a28 $a29 $a30 $a31 $a32 $a33 $a34 $a35 $a36 $a37 $a38 $a39 $a40 $a41 $a42 $a43 $a44 $a45 $a46 $a47 $a48 $a49 $a50
+
+echo "Done, output directory is pdbs"

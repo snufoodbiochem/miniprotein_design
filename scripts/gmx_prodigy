@@ -1,0 +1,1 @@
+find md_out -name *.log | xargs grep dissociation > md_out_pdb/summary

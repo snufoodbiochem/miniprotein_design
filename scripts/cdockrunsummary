@@ -1,0 +1,42 @@
+#!/bin/bash
+if [ -f "summary" ]; then
+rm summary
+fi
+
+find . -maxdepth 1 -type d | grep results | sed 's|.*/results_\(.*\)|\1|' >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+    #   cdockrun_MvN $line $2
+
+       if [ ! -f "results_${mutation}/docked/1st_best.pdb" ] ; then
+	       continue
+       fi
+
+       echo "++ ${mutation}  ++" > prodigy_${mutation}.log
+       prodigy results_${mutation}/docked/1st_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy_${mutation}.log 2>/dev/null
+
+       prodigy results_${mutation}/docked/2nd_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy_${mutation}.log 2>/dev/null
+
+       prodigy results_${mutation}/docked/3rd_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy_${mutation}.log 2>/dev/null
+
+       prodigy results_${mutation}/docked/4th_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy_${mutation}.log 2>/dev/null
+
+       prodigy results_${mutation}/docked/5th_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy_${mutation}.log 2>/dev/null
+
+       printf "$mutation  A: "  >>summary
+       cat prodigy_${mutation}.log | grep "binding affinity"| awk '{print $6}' > affinity
+       echo -n $(awk '{sum+=$1} END {print sum/NR}' affinity) >>summary
+       awk '{sum+=$1; sumsq+=$1*$1} END {mean=sum/NR; print "     STD: " sqrt(sumsq/NR - mean*mean)}' affinity >>summary
+       printf "#"
+done
+echo ""
+echo "Done!"
+
+cat summary | sort -k3 -n > sorted_summary
+
+exit 1
+

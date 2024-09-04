@@ -1,0 +1,48 @@
+#!/bin/bash
+if [ ${#} -ne 1 ]; then
+        echo "meaC [receptor pdb]"
+        exit 1
+fi
+
+pdb_dir="af_align_result"
+
+if [ ! -d ${pdb_dir} ]; then
+        echo "no af_align_result folder in this directory"
+        exit 1
+fi
+
+
+if [ -d "colabdock" ]; then
+        mv colabdock colabdock_old
+else
+    mkdir colabdock
+fi
+
+cd af_align_result
+ls *pdb >list
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	filebase=$(basename $line .pdb)
+	grep ATOM $line | sed 's/ B / X /g' >../colabdock/${filebase}_complex.pdb
+	grep ATOM ../receptor_model.pdb >>../colabdock/${filebase}_complex.pdb
+	echo "END" >>../colabdock/${filebase}_complex.pdb
+done
+
+cd ../colabdock
+
+ls *pdb>list
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	filebase=$(basename $line .pdb)
+	cdockrun_MvN ${filebase}.pdb X,B
+done
+
+cdockrunsummary
+
+
+echo "See colabdock/summary. "
+echo "==============================="
+
+

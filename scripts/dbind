@@ -1,0 +1,22 @@
+#!/bin/bash
+echo "Running DynamicBind"
+echo "Usage: dbind <input_pdb> <input.csv>"
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: dbind <input_pdb> <input.csv>"
+    exit 1
+fi
+
+#export PATH=~/miniconda3/bin:$PATH
+#export MKL_SERVICE_FORCE_INTEL=1
+#if the cpu is made by AMD
+export MKL_THREADING_LAYER=AMD
+
+output=$(basename $2 .csv)
+source activate dynamicbind
+python ~/DynamicBind/run_single_protein_inference.py $1 $2 \
+    --savings_per_complex 40 --inference_steps 20 \
+    --header $output --device 0 \
+    --python ~/miniconda3/envs/dynamicbind/bin/python \
+    --relax_python ~/miniconda3/envs/relax/bin/python
+

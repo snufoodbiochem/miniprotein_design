@@ -1,0 +1,79 @@
+#!/bin/bash
+
+if [ ${#} -eq 0 ]; then
+        echo "usage: patchdock1_1 [receptor.pdb] [ligand.pdb]"
+        exit 1
+elif [ ${#} -eq 1 ]; then
+        echo "usage: patchdock1_1 [receptor.pdb] [ligand.pdb]"
+        exit 1
+elif [ ${#} -gt 2 ] ; then
+	echo "usage: patchdock1_1 [receptor.pdb] [ligand.pdb]"
+	exit 1
+fi
+
+if [[ $1 == *.pdb ]]; then
+	receptor_pdb=$1
+	receptor=`basename $1 .pdb`
+else
+	echo "Invalid receptor pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [[ $2 == *.pdb ]]; then
+	ligand_pdb=$2
+	ligand=`basename $2 .pdb`
+else
+	echo "Invalid ligand pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${receptor_pdb} ]; then
+        echo "no receptor protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -e ${ligand_pdb} ]; then
+        echo "no ligand protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -d ${receptor}_${ligand} ]; then
+	mkdir ${receptor}_${ligand}
+else
+	mv -f ${receptor}_${ligand} ${receptor}_${ligand}_old
+	mkdir ${receptor}_${ligand}
+fi
+
+cd ${receptor}_${ligand}
+cp ../$1 .
+cp ../$2 .
+
+buildParams.pl $1 $2
+patch_dock.Linux params.txt $1.out
+score1=`grep "   1 |" $1.out| awk '{printf ($3)}'`
+score2=`grep "   2 |" $1.out| awk '{printf ($3)}'`
+score3=`grep "   3 |" $1.out| awk '{printf ($3)}'`
+score4=`grep "   4 |" $1.out| awk '{printf ($3)}'`
+score5=`grep "   5 |" $1.out| awk '{printf ($3)}'`
+
+transOutput.pl $1.out 1 5
+prodigy $1.out.1.pdb >>  $1.out.1.txt
+prodigy $1.out.2.pdb >>  $1.out.2.txt
+prodigy $1.out.3.pdb >>  $1.out.3.txt
+prodigy $1.out.4.pdb >>  $1.out.4.txt
+prodigy $1.out.5.pdb >>  $1.out.5.txt
+Kd1=`grep "dissociation constant" $1.out.1.txt | awk '{printf ($8)}'`
+Kd2=`grep "dissociation constant" $1.out.2.txt | awk '{printf ($8)}'`
+Kd3=`grep "dissociation constant" $1.out.3.txt | awk '{printf ($8)}'`
+Kd4=`grep "dissociation constant" $1.out.4.txt | awk '{printf ($8)}'`
+Kd5=`grep "dissociation constant" $1.out.5.txt | awk '{printf ($8)}'`
+
+mv $1.out.1.pdb ${score1}_${Kd1}_1.pdb
+mv $1.out.2.pdb ${score2}_${Kd2}_2.pdb
+mv $1.out.3.pdb ${score3}_${Kd3}_3.pdb
+mv $1.out.4.pdb ${score4}_${Kd4}_4.pdb
+mv $1.out.5.pdb ${score5}_${Kd5}_5.pdb
+
+rm -f *.txt
+
+echo "Done, output directory is ${receptor}_${ligand}"

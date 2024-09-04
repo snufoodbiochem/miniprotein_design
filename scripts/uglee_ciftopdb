@@ -1,0 +1,3 @@
+#!/bin/bash
+
+python3 /usr/local/proteindesign/uglee_ciftopdb.py $1 

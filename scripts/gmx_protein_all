@@ -1,0 +1,67 @@
+#!/bin/bash
+#echo "gmx_protein_all [receptor pdb] [1, 2, 5, 10 -ns]"
+
+af_pdb_dir="af_align_result"
+receptor_pdb="corrected.pdb"
+ns=$2
+
+if [ ${#} -eq 0 ] ; then
+        echo "gmx_protein_all [receptor pdb] [1, 2, 5, 10 -ns]"
+        exit 1
+fi
+if [ ${#} -eq 1 ] ; then
+        ns=10
+fi
+
+if [ ! -e $1 ]; then
+        echo "the input pdb is not found!!"
+        exit 1
+fi
+
+if [ ! -d md_out ]; then
+	mkdir md_out
+else
+	rm -rf md_out_old
+	mv -f md_out md_out_old
+	mkdir md_out
+fi
+
+if [ ! -d md_out_pdb ]; then
+	mkdir md_out_pdb
+else
+	rm -rf md_out_pdb_old
+	mv -f md_out_pdb md_out_pdb_old
+	mkdir md_out_pdb
+fi
+
+pdbfixer $1 --output=corrected.pdb
+
+cd $af_pdb_dir
+ls *.pdb > af_pdb_list
+
+for f in $(sed -n '=' af_pdb_list)
+do
+pdbfile=`head -$f af_pdb_list| tail -1`
+input=`basename $pdbfile .pdb | awk -F '_' '{print $2}' |sed 's/\.//'`
+#echo $input
+cat $pdbfile | sed 's/ B / X /g' > ${input}.pdb
+echo "TER" >> ${input}.pdb
+grep -e ATOM -e TER -e END ../corrected.pdb >>${input}.pdb
+mv ${input}.pdb ../md_out/
+done
+
+tsp tsp -S 1
+cd ../md_out
+find *.pdb > pdblist
+for g in $(sed -n '=' pdblist)
+do
+pdbfile=`head -$g pdblist| tail -1`
+tsp gmx_protein $pdbfile ${ns}
+echo $pdbfile
+done
+
+echo "Done, output directory is md_out and md_out_pdb"
+echo "If you want to watch the process,run 'tsp -c'"
+echo "If you want to terminate all the gmx jobs, run 'killgmx'"
+echo "this script is created by HNC, 2022"
+

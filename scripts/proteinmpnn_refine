@@ -1,0 +1,119 @@
+#!/bin/bash
+#SBATCH -p gpu
+#SBATCH --mem=32g
+#SBATCH --gres=gpu:rtx2080:1
+#SBATCH -c 3
+#SBATCH --output=example_3.out
+#echo "proteinmpnn1_1 [target pdb] [target chain, optional, default is X]"
+
+function af_align_function
+{
+	cd ..
+	mkdir af_align_result
+
+	for h in $(seq 1 10)
+	do
+		echo "af/${miniprotein}_$h/ranked_0.pdb" >inputlist
+		echo "${miniprotein}.pdb" >>inputlist
+		mTM-align -i inputlist -o temp.pdb > log
+		rmsd=`grep RMSD log | grep -v pairwise | awk '{print $2}'`
+		grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >mTM_result/${rmsd}_${h}_af.pdb
+		rm mTM_result/temp.pdb
+		cp mTM_result/${rmsd}_${h}_af.pdb af_align_result
+
+	done
+
+}
+
+
+if [ ${#} -eq 0 ]; then
+        echo "usage: proteinmpnn_refine [miniprotein number]"
+        exit 1
+
+elif [ ${#} -gt 2 ]; then
+	echo "Invalid argumment number"
+	exit 1
+fi
+
+target_pdb=$1_start.pdb
+target_chain=X
+export miniprotein=$1
+mkdir $1
+
+source /home/hnc/miniconda3/bin/activate /home/hnc/miniconda3/envs/mlfold
+path_to_PDB="${target_pdb}"
+
+mv -f seqs seqs_old
+
+output_dir="./$1"
+
+chains_to_design="${target_chain}"
+
+cat ${target_pdb} | grep " X " > ./$1/$1.pdb
+echo "END" >> ./$1/$1.pdb
+cat ${target_pdb} | grep -v " X " > ./$1/receptor.pdb
+
+
+python $proteinmpnn/protein_mpnn_run.py \
+        --pdb_path $path_to_PDB \
+        --pdb_path_chains "$chains_to_design" \
+        --out_folder $output_dir \
+        --num_seq_per_target 10 \
+        --sampling_temp "0.2" \
+        --seed 37 \
+        --batch_size 1
+
+        
+echo "Done, output directory is seqs"
+
+conda deactivate
+
+#af_run
+
+cd $1
+grep -A 3 $1 ../summary > $1_summary
+mkdir af
+#make 10 fasta files from seq/$1_start.fa
+echo ">0" > $1_0.fasta
+echo ">1" > $1_1.fasta
+echo ">2" > $1_2.fasta
+echo ">3" > $1_3.fasta
+echo ">4" > $1_4.fasta
+echo ">5" > $1_5.fasta
+echo ">6" > $1_6.fasta
+echo ">7" > $1_7.fasta
+echo ">8" > $1_8.fasta
+echo ">9" > $1_9.fasta
+echo ">10" > $1_10.fasta
+
+sed -n '2 p' seqs/$1_start.fa >> $1_0.fasta
+sed -n '4 p' seqs/$1_start.fa >> $1_1.fasta
+sed -n '6 p' seqs/$1_start.fa >> $1_2.fasta
+sed -n '8 p' seqs/$1_start.fa >> $1_3.fasta
+sed -n '10 p' seqs/$1_start.fa >> $1_4.fasta
+sed -n '12 p' seqs/$1_start.fa >> $1_5.fasta
+sed -n '14 p' seqs/$1_start.fa >> $1_6.fasta
+sed -n '16 p' seqs/$1_start.fa >> $1_7.fasta
+sed -n '18 p' seqs/$1_start.fa >> $1_8.fasta
+sed -n '20 p' seqs/$1_start.fa >> $1_9.fasta
+sed -n '22 p' seqs/$1_start.fa >> $1_10.fasta
+
+
+cd af
+mv ../*fasta .
+tsp tsp -S 3
+for g in $(seq 1 10)
+        do
+		        tsp afp_monomer $1_$g.fasta
+			echo "Alphafold is running in background"
+	done
+
+tsp tsp -S 1
+#af_align
+
+#tsp af_align_function 
+
+
+echo "The next step is to run 'af_align_refine'"
+
+

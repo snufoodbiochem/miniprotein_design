@@ -1,0 +1,28 @@
+#!/usr/bin/bash
+#
+if grep -q "*" summary ; then
+    grep "*" summary | sed 's/*/*_/g' > list
+    #grep "*" summary  > list
+else
+    echo "Not found. Please mark * before the number_af for the further gmx"
+    exit 1
+fi
+
+mkdir refine
+mkdir refine/af_align_result
+source_dir="../af_align_result"
+cp ../receptor_model.pdb refine/
+cp ../corrected.pdb refine/
+
+for f in $(sed -n '=' list)
+do
+pdbfile=`head -$f list| tail -1`
+cp ${source_dir}/${pdbfile}.pdb refine/af_align_result/
+done
+
+cd refine
+
+gmx_protein_all receptor_model.pdb 10
+
+echo "See refine directory"
+

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+for file in ./*.cif; do
+    uglee_ciftopdb $file
+    rm $file
+done

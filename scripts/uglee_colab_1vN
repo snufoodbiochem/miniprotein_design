@@ -1,0 +1,57 @@
+#!/usr/bin/bash
+if [ "$#" -ne 2 ]; then
+    echo "cdockrun [complex pdb_file] [mini chain,receptor chain]" 
+    echo " This restrain type is 1vN"
+    exit 1
+fi
+
+if [ ! -f "main.py" ]; then
+     cp -r /home/uglee/ColabDock/* .
+fi
+
+
+pdbname=$(basename $1 .pdb)
+
+
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/colabdock
+
+set -o pipefail; python3 extract_rest.py "$1" "$2" "$2" 1vN | sed -n '2p' > rest && echo "making rest succeed"
+
+restrain=$(cat rest)
+echo "import ml_collections" > config.py
+echo "import joblib" >> config.py
+echo "config = {" >> config.py
+echo "    'save_path': './results_$pdbname', " >> config.py
+printf "    'template': '"    >> config.py
+printf $1                      >> config.py
+echo "' ,"                     >> config.py
+printf "    'native': '"       >> config.py
+printf $1                     >> config.py
+echo "' ,"                    >> config.py
+printf "     'chains': '"            >> config.py
+printf $2                       >> config.py
+echo "' , "                     >> config.py
+echo "    'fixed_chains': None, "   >> config.py
+echo "    'res_thres': 8.0, "  >> config.py
+echo "    'rest_1v1': None ,"  >> config.py
+printf  "    'rest_1vN': "      >> config.py
+echo   "$restrain  ,"          >> config.py
+echo "    'rest_MvN': None , "  >> config.py
+echo "     'rep_thres': 8.0, "  >> config.py
+echo "     'rest_rep': None, " >> config.py
+echo "     'crop_len': None, " >> config.py
+echo "     'rounds': 2,      " >> config.py
+echo "    'steps': 50,       " >> config.py
+echo "   'save_every_n_step': 1, " >> config.py
+echo "    'use_multimer': True, " >> config.py  
+echo "    'data_dir': '/ssddata/colabdock_DB/params', " >> config.py
+echo " 'bfloat': True,  "     >>config.py
+echo " } "                    >> config.py
+echo "config = ml_collections.ConfigDict(config) " >>config.py
+
+
+
+
+python3 main.py 
+
+

@@ -1,0 +1,7 @@
+#!/bin/bash
+export PATH="/home/hnc/miniconda3/bin:$PATH"
+output_dir=$PWD
+source activate esmfold
+python3 /usr/local/esm/scripts/fold.py -i $1 -o $output_dir
+
+
