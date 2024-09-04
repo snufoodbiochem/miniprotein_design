@@ -1,0 +1,102 @@
+#!/bin/bash
+if [ $# -ne 1 ]; then
+    echo "Usage: gmx_protein [protein pdb]"
+    exit 1
+fi
+input_pdb=$1
+input=`basename $input_pdb .pdb`
+start_dir=$PWD
+rm -rf $input
+mkdir $input
+cd $input
+
+grep -v HOH ../$input_pdb > ${input}_clean.pdb
+
+# Check for missing residues and add them if necessary
+missing_residues=$(grep -E '^ATOM\s+\d+\s+\w+\s+\w+\s+\w\s+(\d+)' ${input}_clean.pdb | awk '{print $6}' | uniq | sort -n | awk '{if(NR>1 && $1!=p+1){for(i=p+1;i<$1;i++){print i}} p=$1}')
+if [ -n "$missing_residues" ]; then
+    echo "Warning: Missing residues detected. Adding missing residues to ${input}_clean.pdb."
+    for res_num in $missing_residues; do
+        echo "REMARK Missing residue $res_num" >> ${input}_clean.pdb
+        echo "ATOM      1  N   GLY B $res_num      50.000  50.000  50.000  1.00  0.00           N" >> ${input}_clean.pdb
+        echo "ATOM      2  CA  GLY B $res_num      51.000  51.000  51.000  1.00  0.00           C" >> ${input}_clean.pdb
+        echo "ATOM      3  C   GLY B $res_num      52.000  52.000  52.000  1.00  0.00           C" >> ${input}_clean.pdb
+        echo "ATOM      4  O   GLY B $res_num      53.000  53.000  53.000  1.00  0.00           O" >> ${input}_clean.pdb
+    done
+fi
+
+echo -e "15\n 1\n" | gmx pdb2gmx -f ${input}_clean.pdb -ignh -missing -o ${input}_processed.gro -water spce >/dev/null 2>&1 || { echo "gmx pdb2gmx failed"; exit 1; }
+# select 8 for charmm force field, select 1 for tip3 recommended
+
+gmx editconf -f ${input}_processed.gro -o ${input}_newbox.gro -c -d 1.0 -bt cubic >/dev/null 2>&1
+#make cubic box, which is big enough to hold protein
+
+gmx solvate -cp ${input}_newbox.gro -cs spc216.gro -o ${input}_solv.gro -p topol.top >/dev/null 2>&1
+
+# make ions.mpd file
+cat << EOF > ions.mdp
+; ions.mdp - used as input into grompp to generate ions.tpr
+; Parameters describing what to do, when to stop and what to save
+integrator  = steep         ; Algorithm (steep = steepest descent minimization)
+emtol       = 1000.0        ; Stop minimization when the maximum force < 1000.0 kJ/mol/nm
+emstep      = 0.01          ; Minimization step size
+nsteps      = 50000         ; Maximum number of (minimization) steps to perform
+
+; Parameters describing how to find the neighbors of each atom and how to calculate the interactions
+nstlist         = 1         ; Frequency to update the neighbor list and long range forces
+cutoff-scheme	= Verlet    ; Buffered neighbor searching
+ns_type         = grid      ; Method to determine neighbor list (simple, grid)
+coulombtype     = cutoff    ; Treatment of long range electrostatic interactions
+rcoulomb        = 1.0       ; Short-range electrostatic cut-off
+rvdw            = 1.0       ; Short-range Van der Waals cut-off
+pbc             = xyz       ; Periodic Boundary Conditions in all 3 dimensions
+EOF
+
+gmx grompp -f ions.mdp -c ${input}_solv.gro -p topol.top -o ions.tpr >/dev/null 2>&1
+#prepare for ions.tpr
+
+
+echo "13/n" | gmx genion -s ions.tpr -o ${input}_solv_ions.gro -p topol.top -pname NA -nname CL -neutral -conc 0.1 >/dev/null 2>&1
+#generate ions, Na and Cl in 100 mM NaCl, choose 13 for SOL
+
+######################### energy minimization#######################
+cat << EOF > minim.mdp
+; minim.mdp - used as input into grompp to generate em.tpr
+; Parameters describing what to do, when to stop and what to save
+integrator  = steep         ; Algorithm (steep = steepest descent minimization)
+emtol       = 1000.0        ; Stop minimization when the maximum force < 1000.0 kJ/mol/nm
+emstep      = 0.01          ; Minimization step size
+nsteps      = 100000         ; Maximum number of (minimization) steps to perform
+
+; Parameters describing how to find the neighbors of each atom and how to calculate the interactions
+nstlist         = 1         ; Frequency to update the neighbor list and long range forces
+cutoff-scheme   = Verlet    ; Buffered neighbor searching
+ns_type         = grid      ; Method to determine neighbor list (simple, grid)
+coulombtype     = PME       ; Treatment of long range electrostatic interactions
+rcoulomb        = 1.0       ; Short-range electrostatic cut-off
+rvdw            = 1.0       ; Short-range Van der Waals cut-off
+pbc             = xyz       ; Periodic Boundary Conditions in all 3 dimensions
+EOF
+
+gmx grompp -f minim.mdp -c ${input}_solv_ions.gro -p topol.top -o em.tpr -maxwarn 2 >/dev/null 2>&1
+#make tpr for energy minimization
+
+gmx mdrun -v -deffnm em >/dev/null 2>&1
+#run the energy minimization step
+
+echo -e "10\n 0\n" | gmx energy -f em.edr -o potential.xvg >/dev/null 2>&1
+#xmgrace potential.xvg
+##analyze the resutl. Check the convergence near the last steps.
+
+# Extract the minimized structure
+echo -e 0\\n | gmx trjconv -s em.tpr -f em.gro -o ${input}_start.pdb -dump 0 >/dev/null 2>&1
+
+sed -i 's/CD  ILE/CD1 ILE/g; s/ O1 / O  /g; s/ O2 / OXT/g; s/ A / X /g' ${input}_start.pdb
+
+grep -v '^ATOM.*\s\+H\s' ${input}_start.pdb | grep -v 'SOL' | grep -v 'NA ' | grep -v 'CL ' > temp.pdb
+
+mv temp.pdb ${input}_start.pdb
+
+cp ${input}_start.pdb $start_dir
+cd $start_dir
+rm -rf $input

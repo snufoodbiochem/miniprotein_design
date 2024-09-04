@@ -1,0 +1,42 @@
+#!/bin/bash
+if [ ${#} -eq 0 ]; then
+        echo "afp [.fasta file]"
+        exit 1
+fi
+
+if [[ $1 != *.fasta ]]; then
+        echo "Please input .fasta file"
+        exit 1
+fi
+
+if [ ! -e $1 ]; then
+        echo "no fasta file in this directory"
+        exit 1
+fi
+
+inputfastaname=`basename $1 .fasta`
+
+export DOWNLOAD_DIR="/ssddata/alphafold_DB"
+export output_dir=$PWD
+export PATH="/home/hnc/.local/bin:/home/hnc/miniconda3/bin:$PATH"
+source activate alphafold
+
+
+bash /home/hnc/alphafold-2.3.1/run_alphafold.sh \
+-d $DOWNLOAD_DIR \
+-o $output_dir \
+-l 1   \
+-m monomer \
+-c reduced_dbs \
+-f $1 \
+-r true \
+-t 2023-05-14
+
+
+cd $inputfastaname
+#export PATH="/home/yjbaek/miniconda3/bin:$PATH"
+python3 /usr/local/proteindesign/iptm.py > iptm
+source activate alphapickle
+python3 /home/hnc/alphapickle/run_AlphaPickle.py -od ./
+echo "Done, output directory is $inputfastaname"
+rm -rf *pkl msas

@@ -1,0 +1,62 @@
+#!/bin/bash
+#SBATCH -p gpu
+#SBATCH --mem=32g
+#SBATCH --gres=gpu:rtx2080:1
+#SBATCH -c 3
+#SBATCH --output=example_3.out
+#echo "proteinmpnn1_1 [target pdb] [target chain, optional, default is X]"
+
+if [ ${#} -eq 0 ]; then
+        echo "Please type target pdb after command"
+        echo "proteinmpnn1_1 [target pdb] [target chain (optional, default is X)]"
+        exit 1
+elif [ ${#} -gt 2 ]; then
+	echo "Invalid file format"
+	exit 1
+fi
+
+if [ ${#} -eq 1 ]; then
+        echo "target chain is X(default)"
+	target_chain="X"
+elif [ ${#} -eq 2 ]; then
+	echo "target chain is $2"
+	target_chain=$2
+fi
+
+if [[ $1 == *.pdb ]]; then
+	target_pdb=$1
+else
+	echo "Invalid file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${target_pdb} ]; then
+        echo "no protein pdb file in this directory"
+        exit 1
+fi
+export PATH="~/miniconda3/bin:$PATH"
+
+source activate mlfold
+proteinmpnnpath=~/ProteinMPNN
+
+path_to_PDB="${target_pdb}"
+
+output_dir="../outputs/example_3_outputs"
+
+mv -f seqs seqs_old
+
+output_dir="./"
+
+chains_to_design="${target_chain}"
+
+python $proteinmpnnpath/protein_mpnn_run.py \
+        --pdb_path $path_to_PDB \
+        --pdb_path_chains "$chains_to_design" \
+        --out_folder $output_dir \
+        --num_seq_per_target 2 \
+        --sampling_temp "0.1" \
+        --seed 37 \
+        --batch_size 1
+        
+echo "Done, output directory is seqs"
+

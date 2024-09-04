@@ -1,0 +1,183 @@
+#!/bin/bash
+echo "autocombicodockrun [wild type complex pdb] [mini_chain,receptor_chain]"
+
+if [ ${#} -ne 2 ] ; then
+echo "autocombicodockrun [wild type complex pdb] [mini_chain,receptor_chain]"
+       exit 1
+fi
+
+if [ ! -f "sorted_summary_singlemutants" ]; then
+echo "No sorted_summary_singlemutants"
+exit 1
+fi
+
+complexpdb=$1
+chains=$2
+output="multiplemutants"
+
+if [ -f "mt.fasta" ]; then
+rm mt.fasta
+fi
+
+
+chain1=$(echo $chains | awk -F',' '{print $1}')
+chain2=$(echo $chains | awk -F',' '{print $2}')
+
+grep ATOM $complexpdb | grep " $chain1 "  >mini.pdb
+grep ATOM $complexpdb | grep " $chain2 " >receptor.pdb
+seq=$(pdb_tofasta mini.pdb | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+echo $seq >minisequence
+
+
+# Extracting resnumber and rescode from the mutationlist file
+declare -a resnumber
+declare -a rescode
+
+# Example input string
+input=$(cat minisequence)
+
+mutationlist=$(grep "*" sorted_summary | awk '{print $1}' | sed 's/*//g')
+#echo $mutationlist
+
+# Recursive function to apply rules
+apply_rules() {
+    local current_string="$1"
+    local index="$2"
+
+    if [ "$index" -ge "${#resnumber[@]}" ]; then
+        # If all rules have been applied, output the result
+        echo "$current_string"
+        return
+    fi
+
+    # Applying the current rule
+    local num_index="${resnumber[index]}"
+    local replace_char="${rescode[index]}"
+    # Modify the string according to the current rule
+    local modified_string="${current_string:0:num_index-1}$replace_char${current_string:num_index}"
+
+    # Apply the current rule and proceed to the next
+    apply_rules "$modified_string" $((index + 1))
+    # Skip the current rule and proceed to the next
+    apply_rules "$current_string" $((index + 1))
+}
+
+# Reading from mutationlist.txt to populate resnumber and rescode arrays
+while IFS= read -r line; do
+    # Extracting the number part
+    num=$(echo "$line" | grep -o '[0-9]\+')
+    # Extracting the code part
+    code=${line: -1}
+    # Populating the arrays
+    resnumber+=("$num")
+    rescode+=("$code")
+done < mutationlist # Corrected to read from file directly
+
+# Applying all combinations of rules
+apply_rules "$input" 0 > sequences.txt
+
+filename="sequences.txt"
+
+last_line=$(tail -n 1 "$filename")
+
+
+while IFS= read -r line; do
+    changes=""
+
+    for ((i=0; i<${#last_line}; i++)); do
+        if [ "${line:i:1}" != "${last_line:i:1}" ]; then
+            # ?? ???? ??? ?? ??, ?? ??? ??
+            changes+="${last_line:i:1}$((i+1))${line:i:1}_"
+        fi
+    done
+    changes=${changes%_}
+
+    if [ -n "$changes" ]; then
+        echo ">$changes" >>mt.fasta
+	echo  $line      >>mt.fasta
+    else
+        echo ">WT "      >>mt.fasta
+	echo $line       >>mt.fasta
+    fi
+done < "$filename"
+
+
+
+
+echo "substitution mutant sequences were generated"
+
+if [ -d "$output" ]; then
+rm -r $output
+fi
+
+
+mkdir $output
+cd $output
+
+
+
+efold ../mt.fasta | tee log
+
+grep pLDDT log | awk '$16 < 80 {print $11}' >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	rm ${line}.pdb
+done
+
+
+#===========below copy and paste===============
+
+cd ..
+
+find $output -type f -name "*.pdb" > list
+
+mapfile -t array <list
+
+echo "==================================="
+
+
+for line in "${array[@]}"; do
+       echo "load $complexpdb, complex" >align.pml
+       echo "load $line, mini" >> align.pml
+       echo "alter mini, chain='$chain1'"     >>align.pml
+       echo "align mini, complex"     >>align.pml
+       echo "save ${line}, mini" >> align.pml
+       echo "quit" >> align.pml
+       /usr/local/pymol/pymol -cq align.pml >pymol.log
+       rmsd=$(grep Executive: pymol.log | awk '{print $4}')
+
+      grep ATOM ${line} > ${line}_
+      grep ATOM receptor.pdb >> ${line}_
+      echo "END"  >> ${line}_
+      mv ${line}_ $line
+       if (( $(echo "$rmsd > 0.50" | bc -l) )); then
+	       rm $line
+       fi
+       
+done
+
+cd $output
+filenumber=$(ls *pdb | wc -l)
+echo "$filenumber mutant complex pdbs are generated!"
+
+#cp ../$complexpdb WT.pdb
+
+ls *.pdb >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       cdockrun_MvN $line $chains
+done
+
+cdockrunsummary
+cp sorted_summary sorted_summary_mutiplemutants
+cat sorted_summary_mutiplemutants
+echo "Edit sorted_summary_mutiplemutants"
+
+exit 1
+

@@ -1,0 +1,9 @@
+#!/bin/bash
+tsp -k
+tsp -K
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')
+kill -9 $(ps -ef | grep gmx | awk '{print $2}')

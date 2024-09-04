@@ -1,0 +1,73 @@
+#!/bin/bash
+#echo "af_align [input dir=pdb_crmsd] [af dir=af] [output dir=af_align_result]"
+
+if [ ${#} -eq 0 ] ; then
+	echo "Please type input directory(ex.pdb_crmsd) after command."
+	echo "af_align [input dir]"
+	exit 1
+elif [ ${#} -gt 4 ] ; then
+	echo "Invalid file format"
+	exit 1
+else 	input_dir=$1
+fi
+
+if [ ! -d ${input_dir} ]; then
+        echo "no input pdb folder in this directory"
+        exit 1
+fi
+
+if [ ${#} -eq 1 ]; then
+        echo "[af dir=af] [output dir=af_align_result]"
+	af_dir="af"
+	output_dir="af_align_result"
+elif [ ${#} -eq 2 ]; then
+	echo "[af dir=$2] [output dir=af_align_result]"
+	af_dir=$2
+	output_dir="af_align_result"
+elif [ ${#} -eq 3 ]; then
+	echo "[af dir=$2] [output dir=$3]"
+	af_dir=$2
+	output_dir=$3
+fi
+
+rm -rf TM_result
+cd $input_dir
+find *.pdb >../inputfilelist
+cd ..
+cat inputfilelist | sed 's/.pdb//g' >afdirlist
+mkdir temp
+for f in $(sed -n '=' inputfilelist)
+do
+	filename=`head -$f inputfilelist| tail -1`
+	affilename=`head -$f afdirlist| tail -1`
+	grep " X " $input_dir/$filename > temp/$filename
+	echo "END" >> temp/$filename
+	echo "$af_dir/$affilename/ranked_0.pdb" >inputlist
+	echo "temp/$filename" >>inputlist
+	echo $affilename
+        af_aligned_pdbname=`echo $affilename | awk -F "_" '{print $3}'`
+	echo $af_aligned_pdbname
+	mTM-align -i inputlist -o temp.pdb > log
+	rmsd=`grep RMSD log | grep -v pairwise | awk '{print $2}'`
+	#sed 's/ A / X /g' mTM_result/temp.pdb > mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb  
+	grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb
+	
+done
+rm -rf temp
+rm $output_dir/_*
+
+if [ ! -d ${output_dir} ]; then
+	mv -f mTM_result ${output_dir}
+else
+	mv -f ${output_dir} ${output_dir}_old
+	mv -f mTM_result ${output_dir}
+fi
+
+rm ${output_dir}/cc.pdb ${output_dir}/infile ${output_dir}/*.txt ${output_dir}/result.fasta ${output_dir}/temp.pdb
+rm inputlist inputfilelist afdirlist
+
+if [ ${#} -lt 3 ]; then
+	echo "Done, output directory is af_align_result"
+elif [ ${#} -eq 3 ]; then
+	echo "Done, output directory is $3"
+fi

@@ -1,0 +1,97 @@
+#!/bin/bash
+
+if [ ${#} -ne 2 ] ; then
+	echo echo "af_align [patchdock_dir(patchdock+rmsd)] [af or es dir]"
+	exit 1
+fi
+
+# ?? ??
+patchdock_dir=$(basename $1)
+afes_dir=$(basename $2)
+output_dir="align_result"
+
+# load ".pdb" names
+find $patchdock_dir -name *.pdb >inputfilelist
+# result exmaple: patchdock_pdb/Ig_8027_af.pdb
+if [ -d temp ]; then
+	rm -rf temp
+fi
+mkdir temp
+# inputfilelist ? ?? ??
+for f in $(sed -n '=' inputfilelist)
+# result example: 1
+do
+    ## filename = complex pdb name, affilename = pdb name - .pdb
+	filename=`head -$f inputfilelist| tail -1 | xargs basename`
+	# result example: filename = Ig_8027_af.pdb
+    affilename=$(basename $filename .pdb)
+	# result example: affilename = Ig_8027_af
+    ## create miniprotein pdb
+	grep " X " $patchdock_dir/$filename > temp/$filename
+	# result example: ATOM      1  N   ALA X   1      33.200  28.700  31.030  1.00  0.00           N
+	echo "END" >> temp/$filename
+	
+	
+	if [[ $afes_dir == *"_output" ]]; then
+		echo "OK, success"
+		affilename2=${affilename%_*}
+		# result example: affilename2 = Ig_8027
+		cd $afes_dir
+		cp $affilename2/ranked_0.pdb ../$afes_dir
+		rm -r $affilename2
+		cd ..
+		echo "$afes_dir/ranked_0.pdb" > inputlist
+		# result example: Ig_8027_output/Ig_8027/ranked_0.pdb (in inputlist)
+		echo "temp/$filename" >>inputlist
+		# example: 
+			# Ig_8027_output/Ig_8027/ranked_0.pdb
+			# temp/Ig_8027_af.pdb
+			# (in inputlist)                      
+    	# align start
+		mTM-align -i inputlist -o temp.pdb > log
+		if [ $? -ne 0 ]; then
+			command_status=%?
+		fi	
+    	rmsd=$(grep "RMSD" log | grep -v pairwise | awk '{print $2}')
+		# RMSD: 0.564986 -> # 0.564986
+		#sed 's/ A / X /g' mTM_result/temp.pdb > mTM_result/${rmsd}_${af_aligned_pdbname}_af.pdb  
+		grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >"mTM_result/${rmsd}_${affilename2}_af.pdb"
+		# ATOM   5606  CB  LEU B  54      12.061  75.082  51.710 ->  # ATOM   5606  CB  LEU B  54      12.061  75.082  51.710  1.00 20.00
+	
+	elif [[ $afes_dir == ef ]]; then
+        for g in $(seq 1 5)
+        do
+            echo "ef/${affilename}_ef${g}.pdb" >inputlist
+            echo "temp/$filename" >>inputlist
+            mTM-align -i inputlist -o temp.pdb > log${g}
+            rmsd=$(grep RMSD log${g} | grep -v pairwise | awk '{print $2}')
+            grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >"mTM_result/${rmsd}_${affilename}_ef${g}.pdb"
+        done
+    else
+		echo "Invalid file format"
+		exit 1
+	fi
+done
+
+
+
+
+
+uglee_export_chain_name patchdock_dir/${affilename}.pdb 
+
+read -r mini < chain.txt
+read -r recep < <(sed -n '2p' chain.txt)
+
+find mTM_result -name *ef*.pdb >mTMlist
+find $patchdock_dir -name *.pdb >inputfilelist2
+for f in $(sed -n '=' mTMlist)
+do
+    efname=$(head -$f mTMlist | tail -1) 
+    complexname=$(head -1 inputfilelist2) 
+	awk '{printf "%s%s%s\n", substr($0, 1, 21), "X", substr($0, 23)}' "$efname"  > "${efname}.tmp" && mv "${efname}.tmp" "$efname" 
+    grep " ${recep} " ${complexname} >> $efname  
+done
+rm input* log* mTMlist chain.txt
+cp mTM_result/*ef*.pdb .
+echo "af_align OK!"
+

@@ -1,0 +1,4 @@
+#!/bin/bash
+name=$(basename $1 .pdb)
+export PYTHONPATH="/nashome/uglee/mgltools_x86_64Linux2_1.5.7/lib/python2.7/site-packages:$PYTHONPATH"
+/nashome/uglee/mgltools_x86_64Linux2_1.5.7/bin/pythonsh /nashome/uglee/mgltools_x86_64Linux2_1.5.7/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -r $1 -o "${name}.pdbqt"

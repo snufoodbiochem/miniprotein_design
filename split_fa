@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Check if a file path is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <file.fa>"
+    exit 1
+fi
+
+# Input file
+input_file="$1"
+
+# Extract the base filename without the .pdb extension
+base_filename=$(basename "$input_file" .fa)
+
+# Read the content of the file
+content=$(cat "$input_file")
+
+# Initialize sequence counter
+counter=1
+
+# Use awk to extract sequences between '>'
+echo "$content" | awk -v base="$base_filename" 'BEGIN {RS=">"}; NR>1 {print ">" $0 > base "_" NR-1 ".fasta"}'
+
+echo "Sequences have been extracted into separate FASTA files."
+

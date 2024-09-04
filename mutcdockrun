@@ -1,0 +1,120 @@
+#!/bin/bash
+echo "mutcdockrun [mut target residue numbers] [receptor+mini complex pdb] [chains]"
+if [ ${#} -eq 0 ] ; then
+       echo "mutcdockrun [mut target residue numbers] [receptor+mini complex pdb] [chains]"
+       exit 1
+fi
+
+if [ ${#} -ne 3 ] ; then
+       exit 1
+fi
+
+if [ ! -f $2 ] ; then
+echo "no pdb file!"
+exit 1
+fi
+
+newindex="$1"
+IFS=',' read -r -a targetresidues <<< "$newindex"
+
+
+aminoacid=("A" "L" "V" "I" "S" "T" "C" "Y" "F" "W" "D" "N" "E" "Q" "M" "G" "K" "R" "H" "P")
+if [ -f "mt.fasta" ]; then
+rm mt.fasta
+fi
+
+grep ATOM $2 | grep " X "  >mini.pdb
+grep ATOM $2 | grep -v " X " >receptor.pdb
+seq=$(pdb_tofasta mini.pdb | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+echo $seq
+
+for h in "${targetresidues[@]}"
+do
+
+  for f in $(seq 0 19)
+  do
+	  mutation_name="${seq:(($h-1)):1}${h}${aminoacid[$f]}"
+          modified_seq="${seq:0:$(($h-1))}${aminoacid[$f]}${seq:$h}"
+	  echo ">${mutation_name}"  >>mt.fasta
+          echo $modified_seq >> mt.fasta 
+  done
+
+
+done
+
+echo "substitution mutant sequences were generated"
+
+if [ -d "mtpdbmut" ]; then
+rm -r mtpdbmut
+fi
+
+
+mkdir mtpdbmut
+cd mtpdbmut
+
+
+
+efold ../mt.fasta | tee log
+
+cd ..
+
+find mtpdbmut -type f -name "*.pdb" > list
+
+mapfile -t array <list
+
+echo "==================================="
+
+
+for line in "${array[@]}"; do
+       echo "load $2, complex" >align.pml
+       echo "load $line, mini" >> align.pml
+       echo "alter mini, chain='X'"     >>align.pml
+       echo "align mini, complex"     >>align.pml
+       echo "save ${line}, mini" >> align.pml
+       echo "quit" >> align.pml
+       /usr/local/pymol/pymol -cq align.pml >pymol.log
+       rmsd=$(grep Executive: pymol.log | awk '{print $4}')
+
+      grep ATOM ${line} > ${line}_
+      grep ATOM receptor.pdb >> ${line}_
+      echo "END"  >> ${line}_
+      mv ${line}_ $line
+       if (( $(echo "$rmsd > 0.50" | bc -l) )); then
+	       rm $line
+       fi
+       
+done
+
+echo "mutant complex pdbs are generated!"
+
+
+
+cd mtpdbmut
+prodigy ../$2 --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X > prodigy.log
+echo "Mutants +++++++++++" >> prodigy.log
+
+
+ls *.pdb >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       cdockrun_MvN $line $3
+       echo "++ ${mutation}  ++" >> prodigy.log
+       prodigy results_${mutation}/docked/1st_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy.log
+       prodigy results_${mutation}/docked/2nd_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy.log
+       prodigy results_${mutation}/docked/3rd_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy.log
+       prodigy results_${mutation}/docked/4th_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy.log
+       prodigy results_${mutation}/docked/5th_best.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >> prodigy.log
+       echo "+++++++++++"  >> prodigy.log
+
+
+
+done
+
+ grep  "++" prodigy.log > summary
+
+exit 1
+

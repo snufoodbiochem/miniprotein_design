@@ -1,0 +1,17 @@
+#!/bin/bash
+echo "Running DynamicBind"
+echo "Usage: dbmovie "
+
+
+#@export PATH=~/miniconda3/bin:$PATH
+#export MKL_SERVICE_FORCE_INTEL=1
+#if the cpu is made by AMD
+export MKL_THREADING_LAYER=AMD
+
+source activate dynamicbind
+python ~/DynamicBind/movie_generation.py ./ 1+2 \
+    --device 0 \
+    --python ~/miniconda3/envs/dynamicbind/bin/python \
+    --relax_python ~/miniconda3/envs/relax/bin/python
+
+pymol *reverseprocess_relaxed.pdb

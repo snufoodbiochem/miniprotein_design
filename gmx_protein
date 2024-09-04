@@ -1,0 +1,164 @@
+#!/bin/bash
+echo "gmx_protein [protein pdb] [1, 5, or 10-ns]"
+input_pdb=$1
+ns=$2
+input=`basename $input_pdb .pdb`
+start_dir=$PWD
+rm -rf $input
+mkdir $input
+cd $input
+
+grep -v HOH ../$input_pdb > ${input_pdb}_clean.pdb
+
+echo -e "15\n 1\n" | gmx pdb2gmx -f ${input_pdb}_clean.pdb -ignh -missing -o ${input}_processed.gro -water spce
+# select 8 for charmm force field, select 1 for tip3 recommended
+
+gmx editconf -f ${input}_processed.gro -o ${input}_newbox.gro -c -d 1.0 -bt cubic
+#make cubic box, which is big enough to hold protein
+
+gmx solvate -cp ${input}_newbox.gro -cs spc216.gro -o ${input}_solv.gro -p topol.top
+
+# make ions.mpd file
+echo "; ions.mdp - used as input into grompp to generate ions.tpr" >ions.mdp
+echo "; Parameters describing what to do, when to stop and what to save" >>ions.mdp
+echo "integrator  = steep         ; Algorithm (steep = steepest descent minimization)" >>ions.mdp
+echo "emtol       = 1000.0        ; Stop minimization when the maximum force < 1000.0 kJ/mol/nm" >>ions.mdp
+echo "emstep      = 0.01          ; Minimization step size" >> ions.mdp
+echo "nsteps      = 50000         ; Maximum number of (minimization) steps to perform" >>ions.mdp
+echo "                    " >>ions.mdp
+echo "; Parameters describing how to find the neighbors of each atom and how to calculate the interactionsa" >>ions.mdp
+echo "nstlist         = 1         ; Frequency to update the neighbor list and long range forces" >>ions.mdp
+echo "cutoff-scheme	= Verlet    ; Buffered neighbor searching " >>ions.mdp
+echo "ns_type         = grid      ; Method to determine neighbor list (simple, grid)" >> ions.mdp
+echo "coulombtype     = cutoff    ; Treatment of long range electrostatic interactions" >> ions.mdp
+echo "rcoulomb        = 1.0       ; Short-range electrostatic cut-off" >> ions.mdp
+echo "rvdw            = 1.0       ; Short-range Van der Waals cut-off" >> ions.mdp
+echo "pbc             = xyz       ; Periodic Boundary Conditions in all 3 dimensions " >>ions.mdp
+
+gmx grompp -f ions.mdp -c ${input}_solv.gro -p topol.top -o ions.tpr
+#prepare for ions.tpr
+
+
+echo "13/n" | gmx genion -s ions.tpr -o ${input}_solv_ions.gro -p topol.top -pname NA -nname CL -neutral -conc 0.1 
+#generate ions, Na and Cl in 100 mM NaCl, choose 13 for SOL
+
+######################### energy minimization#######################
+echo "; minim.mdp - used as input into grompp to generate em.tpr " > minim.mdp
+echo "; Parameters describing what to do, when to stop and what to sava " >>minim.mdp
+echo "integrator  = steep         ; Algorithm (steep = steepest descent minimization) " >>minim.mdp
+echo "emtol       = 1000.0        ; Stop minimization when the maximum force < 1000.0 kJ/mol/nm" >>minim.mdp
+echo "emstep      = 0.01          ; Minimization step size " >>minim.mdp
+echo "nsteps      = 100000         ; Maximum number of (minimization) steps to perform" >>minim.mdp
+echo "                      " >> minim.mdp
+echo "; Parameters describing how to find the neighbors of each atom and how to calculate the interactions">>minim.mdp
+echo "nstlist         = 1         ; Frequency to update the neighbor list and long range forces" >>minim.mdp
+echo "cutoff-scheme   = Verlet    ; Buffered neighbor searching " >>minim.mdp
+echo "ns_type         = grid      ; Method to determine neighbor list (simple, grid)" >>minim.mdp
+echo "coulombtype     = PME       ; Treatment of long range electrostatic interactions" >>minim.mdp
+echo "rcoulomb        = 1.0       ; Short-range electrostatic cut-off " >>minim.mdp
+echo "rvdw            = 1.0       ; Short-range Van der Waals cut-off " >>minim.mdp
+echo "pbc             = xyz       ; Periodic Boundary Conditions in all 3 dimensions" >>minim.mdp
+
+gmx grompp -f minim.mdp -c ${input}_solv_ions.gro -p topol.top -o em.tpr -maxwarn 2
+#make tpr for energy minimization
+
+gmx mdrun -v -deffnm em
+#run the energy minimization step
+
+echo -e "10\n 0\n" | gmx energy -f em.edr -o potential.xvg
+#xmgrace potential.xvg
+##analyze the resutl. Check the convergence near the last steps. 
+
+################################ equilibrium step
+cp /usr/local/proteindesign/nvt.mdp .
+
+gmx grompp -f nvt.mdp -c em.gro -r em.gro -p topol.top -o nvt.tpr -maxwarn 2
+
+gmx mdrun -deffnm nvt
+
+echo -e "16\n 0\n"| gmx energy -f nvt.edr -o temperature.xvg
+#xmgrace temperature.xvg
+#analyze the results of equilibrium. 
+
+cp /usr/local/proteindesign/npt.mdp .
+
+gmx grompp -f npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr -maxwarn 2
+
+gmx mdrun -deffnm npt
+
+echo -e "18\n 0\n" | gmx energy -f npt.edr -o pressure.xvg
+#xmgrace pressure.xvg
+
+echo -e "24\n 0\n" | gmx energy -f npt.edr -o density.xvg
+#xmgrace density.xvg
+
+############################# MD ##############################
+
+head -3 /usr/local/proteindesign/md.mdp > md_${ns}ns.mdp
+nstep=$(( 500000 * $ns))
+printf "nsteps           = " >> md_${ns}ns.mdp 
+echo $nstep              >> md_${ns}ns.mdp
+tail -42 /usr/local/proteindesign/md.mdp >> md_${ns}ns.mdp
+
+
+# for s MD simulation -ns  
+gmx grompp -f md_${ns}ns.mdp -c npt.gro -t npt.cpt -p topol.top -o md_0_1.tpr -maxwarn 2 
+gmx mdrun -deffnm md_0_1 -nb gpu
+
+
+########################### centering  ################################
+#gmx trjconv -s md_0_1.tpr -f md_0_1.xtc -o md_0_1_noPBC.xtc -pbc mol -center
+#gmx rms -s md_0_1.tpr -f md_0_1_noPBC.xtc -o rmsd.xvg -tu ns
+
+echo -e 1\n 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1.xtc -o md_0_1_noPBC.xtc -center -pbc mol -ur compact
+echo -e 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -o start.gro -dump 0
+echo -e 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -o start.pdb -dump 0
+sed 's/ HIS/ ZIS/g' start.pdb | grep -v ' H' | grep -v 'SOL' | grep -v 'NA ' | grep -v 'CL '|sed 's/ ZIS/ HIS/g' > temp.pdb
+sed 's/CD  ILE/CD1 ILE/g' temp.pdb |sed 's/O1 /O  /g' | sed 's/O2 /OXT/g' | sed 's/ A / X /g' > ${input}_start.pdb
+
+echo -e 0\\n 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC.xtc -o md_0_1_noPBC_fit.xtc -fit rot+trans
+echo -e 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC_fit.xtc -o last.gro -dump 10000
+echo -e 0\\n | gmx trjconv -s md_0_1.tpr -f md_0_1_noPBC_fit.xtc -o last.pdb -dump 10000
+sed 's/ HIS/ ZIS/g' last.pdb | grep -v ' H' | grep -v 'SOL' | grep -v 'NA ' | grep -v 'CL '|sed 's/ ZIS/ HIS/g' > temp.pdb
+sed 's/CD  ILE/CD1 ILE/g' temp.pdb |sed 's/O1 /O  /g' | sed 's/O2 /OXT/g' | sed 's/ A / X /g' > ${input}_last.pdb
+
+echo -e "4\n 4\n" | gmx rms -s md_0_1.tpr -f md_0_1_noPBC_fit.xtc -o rmsd.xvg -tu ns
+#xmgrace rmsd.xvg
+cp /usr/local/proteindesign/iepp.mdp . 
+echo -e "1 & chain A \n 1 & ! chain A \n q \n" | gmx make_ndx -f start.pdb -o index.ndx
+gmx grompp -f iepp.mdp -c npt.gro -t npt.cpt -p topol.top -n index.ndx -o ie.tpr
+gmx mdrun -deffnm ie -rerun md_0_1.xtc -nb cpu
+echo -e "21\n 22\n 23\n 24\n" | gmx energy -f ie.edr -o ${input}_interaction_energy.xvg | grep Average. -A 6 > ${input}_interaction_table
+
+
+cp -f md_0_1_noPBC_fit.xtc ${input}.xtc
+
+
+
+##########################################################prodigy
+
+echo "for before md" >${input}_prodigy.log
+prodigy ${input}_start.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >>${input}_prodigy.log
+echo "++++++++++++++++++++++++++++++" >>${input}_prodigy.log
+echo "after md" >>${input}_prodigy.log
+prodigy ${input}_last.pdb --selection A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,Y,Z X >>${input}_prodigy.log
+
+cp ${input}_last.pdb ../../md_out_pdb/
+cp ${input}_start.pdb ../../md_out_pdb/
+cp ${input}_prodigy.log ../../md_out_pdb/
+cp ${input}_interaction_energy.xvg ../../md_out_pdb/
+
+grep ' X '  ${input}_start.pdb | pdb_tofasta > ../../md_out_pdb/${input}.fasta
+
+echo ${input} >> ../../md_out_pdb/summary
+grep dissociation ${input}_prodigy.log >> ../../md_out_pdb/summary
+grep LJ-SR ${input}_interaction_table >> ../../md_out_pdb/summary
+echo "---------------------------------" >> ../../md_out_pdb/summary
+echo "Done!, this script is created by HNC, 2022"
+
+
+
+
+
+
+

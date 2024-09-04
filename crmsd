@@ -1,0 +1,57 @@
+#!/bin/bash
+echo "first prepare center containing the center coordination"
+echo "the rmsd between the center and the Calpha atoms of miniproteins to the file name is added to the filename"
+
+if [ ${#} -eq 0 ]; then
+        echo "Please type input directory(ex.pdbs) after command."
+        echo "crmsd [pdb-containing dir]"
+        exit 1
+elif [ ${#} -gt 1 ]; then
+	echo "Invalid file format"
+	exit 1
+else input_dir=$1
+fi
+
+if [ ! -d ${input_dir} ]; then
+        echo "no input pdb folder in this directory"
+        exit 1
+fi
+
+if [ ! -e center ]; then
+	echo "Prepare center file containing the center coordination"
+	exit 1
+fi
+
+if [ ! -d pdb_crmsd ]; then
+	mkdir pdb_crmsd
+else
+	mv -f pdb_crmsd pdb_crmsd_old
+	mkdir pdb_crmsd
+fi
+
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+cp center pdb_crmsd
+
+cd ${input_dir}
+find *.pdb > pdblist
+lines=`wc -l pdblist| awk '{printf ($1)}'`
+for f in $(seq 1 $lines)
+do
+pdbfile=`head -$f pdblist| tail -1`
+grep " CA " $pdbfile | grep " X " | grep "ATOM" > ca_temp
+variance_x=`awk -v m="$x1" '{sum += ($7-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+variance_y=`awk -v m="$y1" '{sum += ($8-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+variance_z=`awk -v m="$z1" '{sum += ($9-m)^2; cnt++} END {print sum/cnt}' ca_temp`
+#echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc
+rmsd=`echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+echo ${pdbfile}
+cp $pdbfile ../pdb_crmsd/${rmsd}_${pdbfile}
+done
+rm pdblist
+rm ca_temp
+
+
+echo "Done, output directory is pdb_crmsd"

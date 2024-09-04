@@ -1,0 +1,119 @@
+#!/bin/bash
+echo "addMcdockrun [residue number] [receptor+mini complex pdb] [chains]"
+if [ ${#} -ne 3 ] ; then
+       echo "addMcdockrun [residue number] [receptor+mini complex pdb] [chains]"
+       exit 1
+fi
+if [ ${#} -eq 1 ] ; then
+       exit 1
+fi
+
+# Assign command line arguments to variables
+residue_number=$1
+complexpdb=$2
+chains=$3
+chain1=$(echo $chains | awk -F',' '{print $1}')
+chain2=$(echo $chains | awk -F',' '{print $2}')
+output="mtpdbM"
+
+# Array of amino acids
+aminoacid=("A" "L" "V" "I" "S" "T" "C" "Y" "F" "W" "D" "N" "E" "Q" "M" "G" "K" "R" "H" "P")
+
+# Remove existing mt.fast file if it exists
+if [ -f "mt.fasta" ]; then
+    rm mt.fasta
+fi
+
+# Separate the mini.pdb and receiver.pdb
+grep ATOM $complexpdb | grep " $chain1 " > mini.pdb
+grep ATOM $complexpdb | grep " $chain2 " > receptor.pdb
+
+# Assuming pdb_tofasta converts PDB to sequence
+seq=$(pdb_tofasta mini.pdb | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+
+# Generate 20 mutant sequences with an additional amino acid after the specified residue
+for f in $(seq 0 19) 
+do
+    
+    # Splitting the sequence into before and after the specified residue
+    before=$(echo $seq | cut -c1-$residue_number)
+    after=$(echo $seq | cut -c$(($residue_number + 1))-)
+
+    # Constructing the mutant sequence
+    mutant_sequence="${before}${aminoacid[${f}]}${after}"
+
+    # Write the mutant sequence to mt.fast
+    echo ">${residuenumber}${aminoacid[$f]}_a" >> mt.fasta
+    echo "$mutant_sequence" >> mt.fasta
+done
+
+
+if [ -d "$output" ]; then
+rm -r $output
+fi
+
+
+mkdir $output
+cd $output
+
+efold ../mt.fasta | tee log
+
+grep pLDDT log | awk '$16 < 80 {print $11}' >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	rm ${line}.pdb
+done
+
+cd ..
+
+find $output -type f -name "*.pdb" > list
+
+mapfile -t array <list
+
+echo "==================================="
+
+
+for line in "${array[@]}"; do
+       echo "load $complexpdb, complex" >align.pml
+       echo "load $line, mini" >> align.pml
+       echo "alter mini, chain='$chain1'"     >>align.pml
+       echo "align mini, complex"     >>align.pml
+       echo "save ${line}, mini" >> align.pml
+       echo "quit" >> align.pml
+       /usr/local/pymol/pymol -cq align.pml >pymol.log
+       rmsd=$(grep Executive: pymol.log | awk '{print $4}')
+
+      grep ATOM ${line} > ${line}_
+      grep ATOM receptor.pdb >> ${line}_
+      echo "END"  >> ${line}_
+      mv ${line}_ $line
+       if (( $(echo "$rmsd > 0.50" | bc -l) )); then
+               echo "OK"
+	       #rm $line
+       fi
+       
+done
+
+
+cd $output
+filenumber=$(ls *pdb | wc -l)
+echo "$filenumber mutant complex pdbs are generated!"
+
+cp ../$complexpdb WT.pdb
+
+ls *.pdb >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       cdockrun_MvN $line $chains
+done
+
+cdockrunsummary
+
+exit 1
+

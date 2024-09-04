@@ -1,0 +1,8 @@
+#!/bin/bash
+echo "chchain input.pdb"
+pdbbase=`basename $1 .pdb`
+grep ATOM $1 | sed  's/  C /  c /g' | sed 's/ A / U /g' \
+| sed 's/ B / V /g' | sed 's/ C / W /g' | sed 's/ D / X /g'\
+| sed 's/ E / Y /g' | sed 's/ F / Z /g' | sed 's/ c / C /g' \
+> ${pdbbase}_alter.pdb
+echo "chain id has been changed!"

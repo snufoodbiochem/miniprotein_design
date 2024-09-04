@@ -1,0 +1,97 @@
+#!/bin/bash
+
+if [ ${#} -eq 0 ]; then
+        echo "usage: patchdock_cCdistance [receptor.pdb] [ligand.pdb] [ligand chain]"
+        exit 1
+elif [ ${#} -eq 1 ]; then
+      echo "usage: patchdock_cCdistance [receptor.pdb] [ligand.pdb] [ligand chain]"
+        exit 1
+elif [ ${#} -eq 2 ] ; then
+       echo "usage: patchdock_cCdistance [receptor.pdb] [ligand.pdb] [ligand chain]"
+	exit 1
+fi
+
+if [[ $1 == *.pdb ]]; then
+	receptor_pdb=$1
+	receptor=`basename $1 .pdb`
+else
+	echo "Invalid receptor pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [[ $2 == *.pdb ]]; then
+	ligand_pdb=$2
+	ligand=`basename $2 .pdb`
+else
+	echo "Invalid ligand pdb file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${receptor_pdb} ]; then
+        echo "no receptor protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -e ${ligand_pdb} ]; then
+        echo "no ligand protein pdb file in this directory"
+        exit 1
+fi
+
+if [ ! -d ${receptor}_${ligand} ]; then
+	mkdir ${receptor}_${ligand}
+else
+	mv -f ${receptor}_${ligand} ${receptor}_${ligand}_old
+	mkdir ${receptor}_${ligand}
+
+fi
+
+
+
+x1=`cat center | grep -v "#" | awk '{printf ($1)}'`
+y1=`cat center | grep -v "#" | awk '{printf ($2)}'`
+z1=`cat center | grep -v "#" | awk '{printf ($3)}'`
+
+chainid=$3
+
+cd ${receptor}_${ligand}
+receptor_=${receptor}_
+cp ../$1 .
+cp ../$2 .
+
+buildParams.pl $1 $2
+patch_dock.Linux params.txt ${receptor_}
+
+
+
+transOutput.pl ${receptor_} 1 500
+
+
+find *.pdb > pdblist
+lines=`wc -l pdblist| awk '{printf ($1)}'`
+for f in $(seq 1 $lines)
+do
+pdbfile=`head -$f pdblist| tail -1`
+chain_id=" $3 "
+grep $chain_id $pdbfile | grep " CA " | head -1 > ca_temp
+
+x2=`cat ca_temp | awk '{print $7}'`
+y2=`cat ca_temp | awk '{print $8}'`
+z2=`cat ca_temp | awk '{print $9}'`
+
+variance_x=`awk -v var1="$x1" -v var2="$x2" 'BEGIN {result = (var1 - var2)^2; print result}'` 
+variance_y=`awk -v var1="$y1" -v var2="$y2" 'BEGIN {result = (var1 - var2)^2; print result}'` 
+variance_z=`awk -v var1="$z1" -v var2="$z2" 'BEGIN {result = (var1 - var2)^2; print result}'` 
+
+#echo "sqrt ($variance_x + $variance_y + $variance_z)" | bc
+
+#distance=`awk -v var1="$variance_x" -v var2="$variance_y" -v var3="$variance_z" 'BEGIN {result = sqrt (var1 + var2 + var3); printf "%.1f\n", result }'
+distance=`echo "scale=1; sqrt ($variance_x + $variance_y + $variance_z)" | bc |awk '{printf ("%04.1f",$1)}'`
+echo $pdbfile
+	mv $pdbfile ${distance}_${pdbfile}
+done
+#rm pdblist
+rm ca_temp
+
+rm -f *.txt
+
+echo "Done, output directory is ${receptor}_${ligand}"

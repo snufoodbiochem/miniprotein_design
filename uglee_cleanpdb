@@ -1,0 +1,51 @@
+#!/bin/bash
+
+
+#Check if a PDB file is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <PDB file>"
+    echo "This script is for aligning residue numbers"
+    exit 1
+fi
+
+# Input PDB file
+pdb_file="$1"
+
+# Temporary file for the updated PDB content
+temp_pdb="temp.pdb"
+
+# Initialize the sequential residue number
+sequential_res_num=1
+
+# Previous residue number
+prev_res_num=""
+
+# Process the PDB file
+while IFS= read -r line; do
+    # Normalize line endings to Unix/Linux style
+    line=$(echo "$line" | tr -d '\r')
+
+    # Check if the line starts with ATOM
+    if [[ $line =~ ^ATOM ]]; then
+        # Extract the current residue number (columns 23-26)
+        current_res_num=$(echo "$line" | cut -c23-26 | sed 's/ //g')
+        
+        # If this is a new residue, update the sequential residue number
+        if [[ "$current_res_num" != "$prev_res_num" ]]; then
+            if [[ -n "$prev_res_num" ]]; then
+                ((sequential_res_num++))
+            fi
+            prev_res_num=$current_res_num
+        fi
+        
+        # Replace the current residue number with the sequential one, keeping spacing
+        printf -v updated_line "%s%4d%s" "${line:0:22}" "$sequential_res_num" "${line:26}"
+        echo "$updated_line"
+    else
+        # For non-ATOM lines, just copy the line as is
+        echo "$line"
+    fi
+done < "$pdb_file" > "$temp_pdb"
+
+echo "Generated $temp_pdb with sequential residue numbers."
+echo "You just need to check your original pdb file"

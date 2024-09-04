@@ -1,0 +1,21 @@
+#!/bin/bash
+
+receptor_pdb=$1
+base=0
+
+a1=$((1 + $base))
+a2=$((2 + $base))
+a3=$((3 + $base))
+a4=$((4 + $base))
+a5=$((5 + $base))
+a6=$((6 + $base))
+a7=$((7 + $base))
+a8=$((8 + $base))
+a9=$((9 + $base))
+a10=$((10 + $base))
+
+
+
+parallel patchdockmt $1 10 ::: $a1 $a2 $a3 $a4 $a5 $a6 $a7 $a8 $a9 $a10 
+
+echo "Done, output directory is pdbs"

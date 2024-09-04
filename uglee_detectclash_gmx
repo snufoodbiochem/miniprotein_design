@@ -1,0 +1,58 @@
+#!/bin/bash
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <input_pdb_file.pdb>"
+    exit 1
+fi
+
+input_pdb=$1
+input=$(basename "$input_pdb" .pdb)
+start_dir=$PWD
+
+# Prepare the working directory
+rm -rf "$input" > /dev/null 2>&1
+mkdir "$input" > /dev/null 2>&1
+cd "$input" || exit
+
+# Remove water molecules and other unnecessary parts from the input PDB
+grep -v HOH "../$input_pdb" > "${input}_clean.pdb" 2> /dev/null
+
+# Generate processed structure file and select force field and water model
+echo -e "15\n 1\n" | gmx pdb2gmx -f "${input}_clean.pdb" -ignh -o "${input}_processed.gro" -water spce > /dev/null 2>&1
+
+# Define the simulation box
+gmx editconf -f "${input}_processed.gro" -o "${input}_newbox.gro" -c -d 1.0 -bt cubic > /dev/null 2>&1
+
+# Prepare the input files for energy minimization
+{
+echo "; minim.mdp - used as input into grompp to generate em.tpr "
+echo "integrator  = steep         ; Algorithm (steep = steepest descent minimization) "
+echo "emtol       = 1000.0        ; Stop minimization when the maximum force < 1000.0 kJ/mol/nm"
+echo "emstep      = 0.01          ; Minimization step size "
+echo "nsteps      = 50000         ; Maximum number of (minimization) steps to perform"
+echo "nstlist         = 1         ; Frequency to update the neighbor list and long range forces"
+echo "cutoff-scheme   = Verlet    ; Buffered neighbor searching "
+echo "ns_type         = grid      ; Method to determine neighbor list (simple, grid)"
+echo "coulombtype     = PME       ; Treatment of long range electrostatic interactions"
+echo "rcoulomb        = 1.0       ; Short-range electrostatic cut-off "
+echo "rvdw            = 1.0       ; Short-range Van der Waals cut-off "
+echo "pbc             = xyz       ; Periodic Boundary Conditions in all 3 dimensions"
+} > minim.mdp
+
+# Generate run input file for energy minimization
+gmx grompp -f minim.mdp -c "${input}_newbox.gro" -p topol.top -o em.tpr -maxwarn 2 > /dev/null 2>&1
+
+# Run energy minimization
+gmx mdrun -v -deffnm em > /dev/null 2>&1
+
+# Return to the starting directory
+
+
+if grep -q "stopped" em.log; then
+    echo "Yes"
+else
+    echo "No"
+fi
+cd "$start_dir" 
+rm -rf $input || exit
+
+

@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# Check if the correct number of arguments was passed
+if [ "$#" -ne 3 ]; then
+    echo "Usage: $0 <receptor_file> <ligand_file> <ligand_file_for_center> "
+    exit 1
+fi
+
+if [ -f "config.txt" ];then
+   rm config.txt
+fi
+# Assign command line arguments to variables
+receptor="$1"
+ligand="$2"
+ligandsdf="$3"
+
+# Use a hypothetical script or command to calculate the center coordinates of the ligand
+# Assuming 'uglee_center_for_ligand' outputs the center coordinates directly
+read center_x center_y center_z <<< $(uglee_center_for_ligand "$ligandsdf")
+
+# Fixed size parameters (large enough to cover most ligands)
+size_x="30"
+size_y="30"
+size_z="30"
+
+# Hardcoded energy range and exhaustiveness
+energy_range="4"
+exhaustiveness="8"
+
+# Create or overwrite the config file
+config_file="config.txt"
+
+# Write the receptor and ligand file paths to the configuration file
+echo "receptor = $receptor" > "$config_file"
+echo "ligand = $ligand" >> "$config_file"
+
+# Write the calculated or retrieved center coordinates and sizes to the configuration file
+echo "center_x = $center_x" >> "$config_file"
+echo "center_y = $center_y" >> "$config_file"
+echo "center_z = $center_z" >> "$config_file"
+echo "size_x = $size_x" >> "$config_file"
+echo "size_y = $size_y" >> "$config_file"
+echo "size_z = $size_z" >> "$config_file"
+
+# Write additional parameters like energy range and exhaustiveness
+echo "energy_range = $energy_range" >> "$config_file"
+echo "exhaustiveness = $exhaustiveness" >> "$config_file"
+
+# Notification of successful configuration file creation
+echo "Configuration file '$config_file' created successfully."
+

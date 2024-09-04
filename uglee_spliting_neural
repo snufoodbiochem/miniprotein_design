@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Check for input argument
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <input_pdb_file>"
+    exit 1
+fi
+
+input_file="$1"
+
+# Output directory
+output_dir="$PWD"
+
+# Using awk to split models into separate files
+awk '
+    /MODEL     1/ {print_file = "'"$output_dir"'/1.pdb"}
+    /MODEL     2/ {print_file = "'"$output_dir"'/2.pdb"}
+    /MODEL     3/ {print_file = "'"$output_dir"'/3.pdb"}
+    /MODEL     4/ {print_file = "'"$output_dir"'/4.pdb"}
+    /MODEL     5/ {print_file = "'"$output_dir"'/5.pdb"}
+    /MODEL     6/ {print_file = "'"$output_dir"'/6.pdb"}
+    /MODEL     7/ {print_file = "'"$output_dir"'/7.pdb"}
+    /MODEL     8/ {print_file = "'"$output_dir"'/8.pdb"}
+    /MODEL     9/ {print_file = "'"$output_dir"'/9.pdb"}
+    /MODEL     10/ {print_file = "'"$output_dir"'/10.pdb"}
+    /MODEL     11/ {print_file = "'"$output_dir"'/11.pdb"}
+    /MODEL     12/ {print_file = "'"$output_dir"'/12.pdb"}
+    /MODEL     13/ {print_file = "'"$output_dir"'/13.pdb"}
+    /MODEL     14/ {print_file = "'"$output_dir"'/14.pdb"}
+    /MODEL     15/ {print_file = "'"$output_dir"'/15.pdb"}
+    /MODEL     16/ {print_file = "'"$output_dir"'/16.pdb"}
+    { if (print_file) print > print_file }
+' "$input_file"
+
+echo "Splitting complete."
+

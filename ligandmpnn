@@ -1,0 +1,127 @@
+#!/bin/bash
+
+# Validate number of arguments
+if [ $# -ne 1 ]; then
+    echo "ligandmpnn [target pdb]"
+    exit 1
+fi
+
+
+if [ ! -d "fastas" ]; then
+    mkdir fastas
+    echo "Created directory 'fastas'."
+fi
+
+
+protein_name=$(basename "$1" .pdb)
+
+# Define output directory
+output_dir="${PWD}/fastas/${protein_name}_outputs"
+
+# Activate the Python environment
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/ligandmpnn_env
+
+# Extract the base name from the PDB filename
+
+
+# Run the Python script with corrected and valid arguments
+python3 /home/uglee/LigandMPNN/run.py \
+        --seed 111 \
+        --batch_size 32 \
+        --number_of_batches 4 \
+        --temperature 0.05 \
+        --pdb_path "$1" \
+        --chains_to_design "X" \
+        --ligand_mpnn_cutoff_for_score "6.0" \
+        --pack_side_chains 1 \
+        --number_of_packs_per_design 0 \
+        --pack_with_ligand_context 1 \
+        --out_folder "$output_dir" \
+        --checkpoint_protein_mpnn "/home/uglee/LigandMPNN/model_params/proteinmpnn_v_48_010.pt" \
+        --checkpoint_path_sc "/home/uglee/LigandMPNN/model_params/ligandmpnn_sc_v_32_002_16.pt"
+
+# Check if the previous command was successful
+if [ $? -ne 0 ]; then
+    echo "Error running run.py"
+    exit 1
+fi
+
+# Move the output files to the output directory
+rm -r $output_dir/backbones $output_dir/packed
+mv $output_dir/seqs/${protein_name}.fa $output_dir
+rm -r $output_dir/seqs
+
+
+# revising .fa file
+cd ${output_dir}
+file="${protein_name}.fa"
+
+# 1. Delete the top lines from this .fa file
+tail -n +3 "$file" > temp.fa 
+
+# 2. Combine the lines of the same sequence
+awk '{
+    if (substr($0, 1, 1) == ">") {
+        if (NR > 1) printf "\n";
+        printf "%s", $0;
+    } else {
+        printf ", %s", $0;
+    }
+} END { printf "\n" }' "temp.fa" > temp2.fa
+
+
+# 3. Extract the overall_confidence value and sort the sequences based on this value
+awk -F', ' '{
+    for(i=1; i<=NF; i++) {
+        if ($i ~ /^overall_confidence=/) {
+            split($i, a, "=");  # Split the field into an array 'a' using '=' as delimiter
+            print a[2] " " $0;  # Print the value of overall_confidence followed by the whole line
+            break;  # Exit the loop after processing the overall_confidence field
+        }
+    }
+}' temp2.fa |
+sort -t' ' -k1,1nr |  # Sort numerically in reverse based on the overall_confidence value (first field)
+cut -d' ' -f2- > temp3.fa  # Cut off the first field (overall_confidence value) and print the rest
+
+# 4. Reformat the file to have the sequence and the overall_confidence value on the same line
+awk -F", " '{
+    for (i=1; i<NF; i++) {
+        printf "%s", $i;
+        if (i < NF-1) {
+            printf ", ";
+        }
+    }
+    printf "\n%s\n", $NF;
+}' temp3.fa > temp4.fa
+head -n 10 temp4.fa > temp5.fa
+# 5. Replace the ID numbers with new sequential values
+awk '
+    BEGIN { id_counter = 1 }  # Initialize counter for new ID values
+    {
+        if ($0 ~ /^>/) {  # Check if the line is a header line
+            sub(/id=[0-9]+/, "id=" id_counter, $0);  # Replace the existing ID number
+            id_counter++;  # Increment the ID counter
+        }
+        print $0;  # Print the modified or unmodified line
+    }
+' "temp5.fa" > "temp6.fa"
+
+# 6. Extract the sequence and remove the unwanted part
+awk '{
+    # Match lines that start with ">"
+    if ($0 ~ /^>/) {
+        header = $0;  # Store the header
+    } else {
+        # Split the line on colon to separate the unwanted part and the sequence
+        split($0, parts, ":");
+        # Check if there is a sequence part after the colon
+        if (length(parts[2]) > 0) {
+            # Print the stored header and the sequence part
+            print header;
+            print parts[2];
+        }
+    }
+}' temp6.fa > ${protein_name}.fa
+
+
+rm temp*.fa

@@ -1,0 +1,44 @@
+#!/bin/bash
+
+if [ ${#} -eq 0 ] ; then
+	echo 'intermutcdockrun_1vN_resume [start_mutant] [mini_chain,receptor_chain]'
+	exit 1
+fi
+
+start_mutant=$1
+chains=$2
+restrain=$(cat ../rest)
+
+awk -v pattern="$start_mutant" 'flag {print} $0 ~ pattern {flag=1}' list > list_resume
+
+mapfile -t array <list_resume
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       echo "$line is being processed...."
+       cdockrun_1vN $line $chains "$restrain"
+       echo "$line is done"
+       echo "============================"
+
+done
+
+cdockrunsummary_chain $chains
+#=============================
+
+if [ ! -d "singlemutants" ] ; then
+        mkdir singlemutants
+fi
+
+mv *_complex.pdb singlemutants
+mv prodigy*.log singlemutants
+mv results_* singlemutants
+cp sorted_summary sorted_summary_singlemutants
+mv sorted_summary singlemutants
+cat sorted_summary_singlemutants
+echo "See sorted_summary_singlemutants"
+
+
+exit 1
+
+

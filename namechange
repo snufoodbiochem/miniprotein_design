@@ -1,0 +1,17 @@
+#!/bin/bash
+echo "simple file name change"
+find *.pdb > pdblist
+find *.pdbqt >> pdblist
+for f in $(sed -n '=' pdblist)
+do
+oldpdbfile=`head -$f pdblist| tail -1`
+rmsd=`echo $oldpdbfile | awk -F "_" '{print $1}'`
+score=`echo $oldpdbfile | awk -F "_" '{print $2}'`
+restname=`echo $oldpdbfile | awk -F "_" '{print $3}'`
+newpdbfile=${score}_${rmsd}_${restname}
+mv $oldpdbfile $newpdbfile
+done
+rm pdblist
+ls
+echo " "
+echo "Done, created by HNC, 2022"

@@ -1,0 +1,207 @@
+#!/bin/bash
+if [ ${#} -eq 0 ] ; then
+       echo 'intermutcdockrun_1vN [receptor+mini complex pdb] [mini_chain,receptor_chain]'
+       exit 1
+fi
+
+
+# Step 0: Ask how many receptor residue numbers the user wants to set
+echo "!!!!!!!!!!Important: You must usee uglee_clean_pdb to clean the pdb file before using this script"
+echo -n "How many receptor residue numbers do you want to set? "
+read receptor_count
+
+# Validate input to ensure it's a number
+if ! [[ "$receptor_count" =~ ^[0-9]+$ ]]; then
+    echo "Please enter a valid number."
+    exit 1
+fi
+
+# Step 1: Ask for the residue number of the mini-protein
+echo -n "Enter the residue number of the mini-protein: "
+read mini_protein_residue
+
+# Initialize an array to hold receptor residue numbers
+declare -a receptor_residues
+
+# Steps 2-4: Loop to ask for receptor residue numbers
+for (( i=1; i<=receptor_count; i++ )); do
+    echo -n "Enter receptor residue number $i: "
+    read residue
+    receptor_residues+=("$residue")
+done
+
+# Construct the receptor residue string with commas and spaces
+receptor_residues_string=$(printf ", %s" "${receptor_residues[@]}")
+receptor_residues_string=${receptor_residues_string:2} # Remove leading comma and space
+
+# Step 5 & 6: Produce and display the output
+if [ -f rest ]; then
+    rm rest
+fi
+echo "[[$mini_protein_residue, [$receptor_residues_string]]]" > rest
+echo "rest is made!"
+
+restrain=$(cat rest)
+
+
+
+
+if [ ! -f $1 ] ; then
+echo "no pdb file!"
+exit 1
+fi
+
+complexpdb=$1
+chains=$2
+output="mtpdbmut"
+
+chain1=$(echo $chains | awk -F',' '{print $1}')
+chain2=$(echo $chains | awk -F',' '{print $2}')
+
+grep ATOM $complexpdb | grep " $chain1 "  > mini.pdb
+grep ATOM $complexpdb | grep -v " $chain1 " > receptor.pdb
+
+
+echo "run /usr/local/proteindesign/interfaceresidues.py" > inter.pml
+echo "load $complexpdb, complex"   >>inter.pml
+printf  'foundResidues = interfaceResidues("complex", cA="c. ' >> inter.pml  
+printf ${chain1}   >> inter.pml
+printf '", cB="c. ' >> inter.pml
+printf ${chain2} >> inter.pml
+echo '", cutoff=5.0)' >> inter.pml
+echo "print foundResidues" >> inter.pml
+
+/usr/local/pymol/pymol -cq inter.pml > log
+cat log | sed 's/),/)\n/g' | grep chA | sed 's/\[/ /g'| awk -F"[', ]+" '{print $4}' > interresidues
+
+
+mapfile -t targetresidues <interresidues
+
+
+aminoacid=("A" "L" "V" "I" "S" "T" "C" "Y" "F" "W" "D" "N" "E" "Q" "M" "G" "K" "R" "H" "P")
+if [ -f "mt.fasta" ]; then
+rm mt.fasta
+fi
+
+seq=$(pdb_tofasta mini.pdb | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+echo $seq
+touch mt.fasta
+
+for h in "${targetresidues[@]}"
+do
+
+  for f in $(seq 0 19)
+  do
+	  mutation_name="${seq:(($h-1)):1}${h}${aminoacid[$f]}"
+          modified_seq="${seq:0:$(($h-1))}${aminoacid[$f]}${seq:$h}"
+	  echo ">${mutation_name}" >> mt.fasta
+          echo $modified_seq >> mt.fasta 
+  done
+
+
+done
+
+
+echo "substitution mutant sequences were generated"
+
+if [ ! -d "$output" ]; then
+	mkdir $output
+fi
+
+cd $output
+
+
+
+efold_mh ../mt.fasta | tee log
+
+grep pLDDT log | awk '$16 < 80 {print $11}' >list
+
+mapfile -t array <list
+
+for line in "${array[@]}"; do
+	rm ${line}.pdb
+done
+
+
+#==========================
+
+cd ..
+
+find $output -type f -name "*.pdb" > list
+
+mapfile -t array <list
+
+echo "==================================="
+
+
+for line in "${array[@]}"; do
+       echo "load $complexpdb, complex" >align.pml
+       echo "load $line, mini" >> align.pml
+       echo "alter mini, chain='$chain1'"     >>align.pml
+       echo "align mini, complex"     >>align.pml
+       echo "save ${line}, mini" >> align.pml
+       echo "quit" >> align.pml
+       /usr/local/pymol/pymol -cq align.pml >pymol.log
+       rmsd=$(grep Executive: pymol.log | awk '{print $4}')
+
+      grep ATOM ${line} > ${line}_
+      grep ATOM receptor.pdb >> ${line}_
+      echo "END"  >> ${line}_
+      mv ${line}_ $line
+       if (( $(echo "$rmsd > 1.00" | bc -l) )); then
+	       echo "$line is rejected"
+	       rm $line
+       fi
+       
+done
+
+cd $output
+filenumber=$(ls *pdb | wc -l)
+echo "$filenumber mutant complex pdbs are generated!"
+
+#cp ../$complexpdb WT.pdb
+
+
+
+ls *.pdb >list           
+
+#=============================================
+#if you want to continue the cdockrun, you can delete the above lines
+#Edit list file if you want to exclude some mutants. 
+#Decomment the below line
+#cd mtpdbmut
+chains=$2
+
+#=============================================
+
+
+mapfile -t array <list
+
+for line in "${array[@]}"
+do
+       mutation=$(basename $line .pdb)
+       echo "$line is being processed...."
+       cdockrun_1vN $line $chains "$restrain"
+       echo "$line is done"
+       echo "============================"
+
+done
+
+cdockrunsummary_chain $2
+#=============================
+
+if [ ! -d "singlemutants" ] ; then
+	mkdir singlemutants
+fi
+
+mv *_complex.pdb singlemutants
+mv prodigy*.log singlemutants
+mv results_* singlemutants
+cp sorted_summary sorted_summary_singlemutants
+mv sorted_summary singlemutants
+cat sorted_summary_singlemutants
+echo "See sorted_summary_singlemutants"
+
+
+exit 1
+

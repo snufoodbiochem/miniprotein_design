@@ -1,0 +1,21 @@
+#!/bin/bash
+miniprotein=`basename "$PWD"`
+echo "Usage: af_align_refine"
+
+
+        mkdir af_align_result
+
+        for h in $(seq 1 10)
+        do
+                echo "af/${miniprotein}_$h/ranked_0.pdb" >inputlist
+                echo "${miniprotein}.pdb" >>inputlist
+                mTM-align -i inputlist -o temp.pdb > log
+                rmsd=`grep RMSD log | grep -v pairwise | awk '{print $2}'`
+                grep " B " mTM_result/temp.pdb | sed  's/$/  1.00 20.00/g' >mTM_result/${rmsd}_${h}_af.pdb
+                rm mTM_result/temp.pdb
+                cp mTM_result/${rmsd}_${h}_af.pdb af_align_result
+
+        done
+
+	echo "The next step is to run 'gmx_protein_all receptor.pdb'"
+

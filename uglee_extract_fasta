@@ -1,0 +1,8 @@
+#!/bin/bash
+if [ ${#} -ne 1 ]; then
+	echo "Usage:uglee_extract_fasta [pdb file]"
+	exit 1
+fi
+
+/usr/local/phenix-1.21rc1-4933/build/bin/phenix.python /usr/local/proteindesign/uglee_extract_fasta.py $1
+

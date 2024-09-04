@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Path to the input PDB file
+if [ ${#} -eq 0 ] ; then
+   echo "Usage:$0 [pdb file that has ions, water... whatever"]
+   exit 1
+fi
+input_file=$1
+# Path to the output file where the filtered lines will be saved
+new_name=$(basename "$1" .pdb)
+
+output_file=${new_name}_out.pdb
+
+# Regular expression that matches any of the three-letter amino acid codes
+amino_acid_pattern="\b(ALA|ARG|ASN|ASP|CYS|GLN|GLU|GLY|HIS|ILE|LEU|LYS|MET|PHE|PRO|SER|THR|TRP|TYR|VAL)\b"
+
+# Use grep to filter the input file and save the results to the output file
+grep -E "$amino_acid_pattern" "$input_file" > "$output_file"
+echo "TER" >> "$output_file"
+echo "ENDMDL" >> "$output_file"
+
+rm $1
+mv $output_file ${new_name}.pdb
+echo "Filtering complete. Amino acid lines saved to $output_file."
+

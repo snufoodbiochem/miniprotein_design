@@ -1,0 +1,5 @@
+#!/bin/bash
+
+for file in ./*.pdb; do
+    uglee_remove_pdb $file
+done

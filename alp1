@@ -1,0 +1,19 @@
+#!/bin/bash
+cp relaxed_model_1_multimer_v3_pred_0.pdb model_1_multimer_v3_pred_0.pdb
+
+json_data='{
+    "iptm+ptm": {
+        "model_1_multimer_v3_pred_0": 0.7067996025264436
+    },
+    "order": [
+        "model_1_multimer_v3_pred_0"
+    ]
+}'
+
+# Writing the JSON data stored in the variable to a file
+echo "$json_data" > ranking_debug.json
+export PATH=~/miniconda3/bin:$PATH
+
+source activate alphapickle
+python3 /home/hnc/alphapickle/run_AlphaPickle.py -od ./
+conda deactivate

@@ -1,0 +1,154 @@
+#!/bin/bash
+
+if [ ${#} -lt 2 ]; then
+	echo "ISS_e_multimer [receptor pdb] [pdb_containing dir]"
+	exit 1
+fi
+
+echo "Make sure that your are running this script after picking out pdbs based on Patchdock score and crmsd"
+
+# Receptor PDB file
+receptor=$1
+
+# Save the current directory
+initial_dir=$(pwd)
+
+# Directory containing PDB files
+input_dir=$2
+
+#############################################################################################
+#Runnign MPNN
+
+# Loop through all PDB files in the input directory
+for pdb_file in "$input_dir"/*.pdb; do
+    # Check if there are no PDB files in the directory
+    if [ ! -e "$pdb_file" ]; then
+        echo "No PDB files found in the directory."
+        exit 1
+    fi
+
+    # Print the name of the current PDB file
+    echo "Processing $pdb_file..."
+
+    # Run ligandmpnn on the PDB file
+    ligandmpnn "$pdb_file"
+
+    # Extract the base name without the .pdb extension
+    name=$(basename "$pdb_file" .pdb)
+
+    # Navigate to the fastas directory
+    cd fastas || { echo "Directory 'fastas' not found."; exit 1; }
+
+    # Navigate to the output directory for the current PDB file
+    cd "${name}_outputs" || { echo "Directory '${name}_outputs' not found."; exit 1; }
+
+    # Run split_fa on the corresponding .fa file
+    split_fa "${name}.fa"
+
+    # Return to the initial directory
+    cd "$initial_dir"
+
+done
+
+echo "Processing completed for all PDB files."
+
+#############################################################################################
+
+#############################################################################################
+#Making receptor_miniprotein complex fasta file without linker
+
+if [ ! -d "complex_fastas" ]; then
+        mkdir complex_fastas
+fi
+
+receptor_seq=$(pdb_tofasta "$receptor" | grep -v '>' | sed ':a;N;$!ba;s/\n//g')
+touch all_complex_fastas
+
+# Loop through all Fasta files
+for fasta_file in fastas/*_outputs/*.fasta; do
+
+        # Print the name of the current Fasta file
+        echo "Processing $fasta_file..."
+
+        name=$(basename "$fasta_file" .fasta)
+
+        miniprotein_seq=$(grep -v '^>' "$fasta_file" | sed ':a;N;$!ba;s/\n//g' )
+
+	# Make complex sequence
+	complex_seq="${receptor_seq}:${miniprotein_seq}"
+
+	# Write the complex sequence to a new file
+        echo ">${name}" > "${name}_complex.fasta"
+        echo "$complex_seq" >> "${name}_complex.fasta"
+
+	cat ${name}_complex.fasta >> all_complex_fastas
+
+	mv "${name}_complex.fasta" complex_fastas
+
+
+done
+
+#############################################################################################
+#Running ESMfold
+#It is okay to change path as you want
+
+output_dir="$initial_dir/complex"
+
+if [ ! -d "$output_dir" ]; then
+        mkdir $output_dir
+fi
+
+source /home/uglee/miniconda3/bin/activate /home/uglee/miniconda3/envs/esmfold
+python3 /home/uglee/esm/scripts/fold.py -i all_complex_fastas -o $output_dir | tee esm.log
+
+
+#############################################################################################
+#############################################################################################
+#Align to original pdb file to calculate rmsd
+
+
+source /home/mhpark/miniconda3/bin/activate /home/mhpark/miniconda3/envs/dockQ
+
+
+
+# Create a file to store the RMSD scores
+align_output_file="alignment_summary"
+echo -e "Complex PDB File\tKd_predicted\tDockQscore\tpLDDT\tpTM" > "$align_output_file"
+
+# Loop through all PDB files in the 'complex' directory
+for complex_pdb in ${output_dir}/*.pdb; do
+    echo "Processing $complex_pdb..."
+
+    original=$(basename $complex_pdb | sed -E 's/_[0-9]+\.pdb$//')
+    name=$(basename $complex_pdb .pdb)
+
+    original_pdb="${input_dir}/$original.pdb"
+
+    pLDDT=$(grep "${name}" "esm.log" | grep 'Predicted structure' | awk -F 'pLDDT' '{print $2}' | awk -F ',' '{print $1}')
+    pTM=$(grep "${name}" "esm.log" | grep 'Predicted structure' | awk -F 'pTM ' '{print $2}' | awk -F ' ' '{print $1}')
+
+    DockQscore=$(DockQ --allowed_mismatches 60 "$complex_pdb" "$original_pdb" | grep DockQ: | awk -F ' ' '{print $2}')
+
+    Kd_predicted=$(prodigy $complex_pdb | grep "Predicted dissociation constant" | awk '{print substr($NF, length($NF)-2, 3)}')
+
+
+    echo -e "${name}.pdb\t${Kd_predicted}\t${DockQscore}\t${pLDDT}\t${pTM}" >> "$align_output_file"
+
+    if [[ -z "$DockQscore" ]] || ! [[ "$DockQscore" =~ ^-?[0-9]+([.][0-9]+)?$ ]] || (( $(echo "$DockQscore < 0.19" | bc -l) )); then
+            echo "$name is rejected"
+            rm "$complex_pdb"
+            perl -i -ne "print unless /\b$name\b/" "$align_output_file"
+
+    fi
+
+    rm -f "tmp_rmsd"
+done
+
+awk 'NR==1{print; next} {print | "sort -t\"\t\" -k2,2nr"}' "$align_output_file" > "sorted_${align_output_file}"
+
+#############################################################################################
+
+echo "Predicting complex structures is done."
+echo "Check complex directory"
+
+

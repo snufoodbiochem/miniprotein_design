@@ -1,0 +1,49 @@
+#!/bin/bash
+
+base=$2
+if [ ${#} -eq 0 ] ; then
+        echo "Please type receptor pdb after command"
+        echo "patchdock10_dir [receptor.pdb] [scaffold dir] [restart number (optional)]"
+        exit 1
+elif [ ${#} -eq 2 ]; then
+	export scaffolds_dir=$2
+	base=0
+
+elif [ ${#} -eq 1 ]; then
+	export scaffolds_dir="scaffolds"
+        base=0
+elif [ ${#} -eq 3 ]; then
+	export scaffolds_dir=$2
+	export base=$3
+
+fi 
+
+if [[ $1 == *.pdb ]] ; then
+	receptor_pdb=$1
+else
+	echo "Invalid file format, please type [*.pdb] file"
+	exit 1
+fi
+
+if [ ! -e ${receptor_pdb} ]; then
+        echo "no receptor protein pdb file in this directory"
+        exit 1
+fi
+
+mkdir pdbs
+mkdir patchdock_out
+
+a1=$((1 + $base))
+a2=$((2 + $base))
+a3=$((3 + $base))
+a4=$((4 + $base))
+a5=$((5 + $base))
+a6=$((6 + $base))
+a7=$((7 + $base))
+a8=$((8 + $base))
+a9=$((9 + $base))
+a10=$((10 + $base))
+
+parallel patchdock_dir $1 10 $scaffolds_dir ::: $a1 $a2 $a3 $a4 $a5 $a6 $a7 $a8 $a9 $a10
+
+echo "Done, output directory is pdbs"

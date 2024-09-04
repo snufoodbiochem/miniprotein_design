@@ -1,0 +1,24 @@
+#!/bin/bash
+echo "gmx_protein_energy [protein pdb] "
+input_pdb=$1
+input=`echo $input_pdb |awk -F "." '{print $1}'`
+#xmgrace rmsd.xvg
+cp /usr/local/proteindesign/iepp.mdp . 
+echo -e "1 & chain A \n 1 & ! chain A \n q \n" | gmx make_ndx -f start.pdb -o index.ndx
+gmx grompp -f iepp.mdp -c npt.gro -t npt.cpt -p topol.top -n index.ndx -o ie.tpr
+gmx mdrun -deffnm ie -rerun md_0_1.xtc -nb cpu
+echo -e "21\n 22\n 23\n 24\n" | gmx energy -f ie.edr -o ${input}_interaction_energy.xvg | grep Average. -A 6 > ${input}_interaction_table
+mkdir ../../md_out_pdb
+cp ${input}_interaction_energy.xvg ../../md_out_pdb/
+
+
+echo ${input} >> ../../md_out_pdb/summary
+grep dissociation ${input}_prodigy.log >> ../../md_out_pdb/summary
+grep LJ-SR ${input}_interaction_table >> ../../md_out_pdb/summary
+echo "---------------------------------" >> ../../md_out_pdb/summary
+echo "Done!, this script is created by HNC, 2022"
+
+
+
+
+
