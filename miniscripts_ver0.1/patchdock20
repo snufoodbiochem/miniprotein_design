@@ -2,7 +2,7 @@
 base=$2
 if [ ${#} -eq 0 ] ; then
         echo "Please type receptor pdb after command"
-        echo "patchdock10 [receptor.pdb] [restart number (optional)]"
+        echo "patchdock20 [receptor.pdb] [restart number (optional)]"
         exit 1
 elif [ ${#} -eq 1 ]; then
 	base=0
